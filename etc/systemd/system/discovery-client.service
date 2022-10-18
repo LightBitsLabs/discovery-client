@@ -1,0 +1,18 @@
+[Unit]
+Description=NVMeOF Discovery Client
+After=network.target networking.service
+Before=remote-fs-pre.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/discovery-client serve
+ExecReload=/bin/kill -HUP $MAINPID
+WorkingDirectory=/root
+KillMode=process
+Restart=on-failure
+RestartPreventExitStatus=255
+TimeoutStartSec=60
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

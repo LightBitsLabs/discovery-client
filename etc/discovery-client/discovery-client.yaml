@@ -1,0 +1,16 @@
+cores: [0]
+clientConfigDir: /etc/discovery-client/discovery.d/
+internalDir: /etc/discovery-client/internal/
+reconnectInterval: 5s
+logPagePaginationEnabled: false
+maxIOQueues: 0
+logging:
+  filename: "/var/log/discovery-client.log"
+  maxAge: 96h
+  maxSize: 100
+  level: info
+  reportCaller: true
+debug:
+  metrics: true
+  enablepprof: true
+  endpoint: "[::]:6060"

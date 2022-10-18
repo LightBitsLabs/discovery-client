@@ -1,0 +1,52 @@
+FROM golang:1.17.2-alpine3.13 AS builder
+
+RUN apk update && \
+    apk add --no-cache \
+    curl \
+    docker-cli \
+    bash \
+    make \
+    git \
+    g++ \
+    musl-dev \
+    util-linux-dev \
+    linux-headers
+
+ENV UNAME=app
+
+ARG GID=1000
+ARG UID=1000
+ARG DOCKER_GID=998
+
+RUN addgroup -g $GID $UNAME
+# on alpine ping group is coliding with docker-group on id 999 - delete it if exists
+RUN getent group ping && delgroup ping
+RUN addgroup -g $DOCKER_GID docker
+RUN adduser --disabled-password -u $UID -G $UNAME -G docker $UNAME
+
+COPY . /go/src/github.com/lightbitslabs/discovery-client
+WORKDIR /go/src/github.com/lightbitslabs/discovery-client
+RUN make build/discovery-client
+
+
+FROM alpine:3.14
+
+LABEL maintainers="Lightbits Labs" \
+      description="NVMeTCP Discovery Client Service" \
+      version.rel="UNKNOWN" \
+      version.git="UNKNOWN" \
+      version.build.host="UNKNOWN" \
+      version.build.time="UNKNOWN" \
+      version.build.id="UNKNOWN"
+
+RUN apk update && \
+    apk add --no-cache \
+    util-linux
+
+RUN mkdir -p /etc/{discovery-client,nvme}
+COPY --from=builder /go/src/github.com/lightbitslabs/discovery-client/etc/discovery-client/discovery-client.yaml /etc/discovery-client/
+
+COPY --from=builder /go/src/github.com/lightbitslabs/discovery-client/build/discovery-client /discovery-client
+
+ENTRYPOINT ["/discovery-client"]
+CMD ["serve"]

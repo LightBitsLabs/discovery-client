@@ -1,0 +1,46 @@
+discovery-client:
+  discovery-client:
+    build:
+    - make
+    install:
+    - make install-discovery-client
+    deps:
+    - file://Makefile
+    - file://pkg
+    - file://model
+    - file://vendor
+    - file://application
+    - file://main.go
+    - file://go.mod
+
+  discovery-client-packages:
+    build:
+    - make discovery-packages -f Makefile.lb
+    install:
+    - make install-discovery-client-packages
+    deps:
+    - common:milestone
+    - file://Makefile
+    - file://Makefile.lb
+    - file://pkg
+    - file://model
+    - file://vendor
+    - file://application
+    - file://main.go
+    - file://go.mod
+    - file://discovery-client.spec
+
+  lb-nvme-discovery-client:
+    build:
+    - make -f Makefile.lb build-images
+    install:
+    - make -f Makefile.lb push-images
+    deps:
+    - file://Makefile
+    - file://pkg
+    - file://model
+    - file://vendor
+    - file://application
+    - file://main.go
+    - file://go.mod
+    - file://lb.yaml

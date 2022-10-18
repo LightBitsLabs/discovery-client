@@ -1,0 +1,25 @@
+ifneq ("$(wildcard /.inside-lb-build)","")
+include $(WORKSPACE_TOP)/common/Makefile.env
+endif
+
+
+DOCKER_REGISTRY := $(or $(DOCKER_REGISTRY),lbdocker:5000)
+override BUILD_HASH := $(shell component-tool version --repo discovery-client lb-nvme-discovery-client)
+
+BUILD_FLAGS := DOCKER_REGISTRY=$(DOCKER_REGISTRY) \
+    BUILD_HASH=$(BUILD_HASH) \
+    LIGHTOS_VERSION=$(LIGHTOS_VERSION)
+
+build-images:
+	$(BUILD_FLAGS) $(MAKE) -f Makefile build-images
+
+push-images:
+	$(BUILD_FLAGS) $(MAKE) -f Makefile push-images
+
+build-and-push-images: build-images push-images
+
+discovery-rpms:
+	$(BUILD_FLAGS) $(MAKE) -f Makefile discovery-rpms
+
+discovery-packages:
+	$(BUILD_FLAGS) $(MAKE) -f Makefile discovery-packages
