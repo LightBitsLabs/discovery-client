@@ -1,5 +1,5 @@
 [Unit]
-Description=NVMeOF Discovery Client
+Description=NVMe/TCP Discovery Client
 After=network.target networking.service
 Before=remote-fs-pre.target
 
