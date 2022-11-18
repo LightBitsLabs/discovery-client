@@ -1,0 +1,14 @@
+include $(WORKSPACE_TOP)/lb_containers/Makefile.container
+
+
+TARGETS := install-discovery-client install-discovery-client-packages build-images push-images build/discovery-client
+
+all: build/discovery-client
+
+${TARGETS}: discovery_container
+	${Q}run_in_container -i lbdiscovery:${LBDISCOVERY_CONTAINER_VERSION} -c "${MAKE} -f Makefile.container_inner $@"
+
+discovery-packages: nvme_container build/discovery-client
+	${Q}run_in_container -i lbnvme:${LBNVME_CONTAINER_VERSION} -c "${MAKE} -f Makefile.container_inner $@"
+
+.PHONY:	${TARGETS}
