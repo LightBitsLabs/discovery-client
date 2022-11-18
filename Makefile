@@ -74,7 +74,7 @@ discovery-rpms: build/dist build/discovery-client
 	cp -f ${HOME}/rpmbuild/RPMS/x86_64/discovery-*.rpm build/dist/
 
 discovery-client-debs: discovery-rpms
-	(cd build/dist && sudo alien --to-deb -v -k ${WORKSPACE_TOP}/discovery-client/build/dist/discovery-client*.rpm && sudo chown ${USER}:${USER} ${WORKSPACE_TOP}/discovery-client/build/dist/*.deb)
+	(cd build/dist && sudo alien --to-deb -v -k ${WORKSPACE_TOP}/discovery-client/build/dist/discovery-client*.rpm && sudo chown ${USER}: ${WORKSPACE_TOP}/discovery-client/build/dist/*.deb)
 
 discovery-packages: discovery-rpms discovery-client-debs
 

@@ -6,9 +6,9 @@ TARGETS := install-discovery-client install-discovery-client-packages build-imag
 all: build/discovery-client
 
 ${TARGETS}: discovery_container
-	${Q}run_in_container -i lbdiscovery:${LBDISCOVERY_CONTAINER_VERSION} -c "${MAKE} -f Makefile.container_inner $@"
+	${Q}run_in_container -i lbdiscovery:${LBDISCOVERY_CONTAINER_VERSION} -- ${MAKE} -f Makefile.container_inner $@
 
 discovery-packages: nvme_container build/discovery-client
-	${Q}run_in_container -i lbnvme:${LBNVME_CONTAINER_VERSION} -c "${MAKE} -f Makefile.container_inner $@"
+	${Q}run_in_container -i lbnvme:${LBNVME_CONTAINER_VERSION} -- ${MAKE} -f Makefile.container_inner $@
 
 .PHONY:	${TARGETS}
