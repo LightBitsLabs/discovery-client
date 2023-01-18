@@ -39,24 +39,29 @@ type hostApiImp struct {
 	log                      *logrus.Entry
 	i                        int
 	logPagePaginationEnabled bool
+	nvmeHostIDPath           string
 }
 
-func NewHostApi(logPagePaginationEnabled bool) hostapi.HostAPI {
+func NewHostApi(logPagePaginationEnabled bool, nvmeHostIDPath string) hostapi.HostAPI {
 
 	return &hostApiImp{
 		ConnTbl:                  make(map[hostapi.ConnectionID]*connInfo),
 		log:                      logrus.WithFields(logrus.Fields{}),
 		i:                        1,
 		logPagePaginationEnabled: logPagePaginationEnabled,
+		nvmeHostIDPath:           nvmeHostIDPath,
 	}
 }
 
 func (h *hostApiImp) Discover(discoveryRequest *hostapi.DiscoverRequest) ([]*hostapi.NvmeDiscPageEntry, hostapi.ConnectionID, error) {
 	// convert discovery request type
 	req := createDiscoveryRequest(discoveryRequest)
-	client := NewClient(h.logPagePaginationEnabled) // creates aenCh
+	client := NewClient(h.logPagePaginationEnabled, h.nvmeHostIDPath) // creates aenCh
 
 	response, err := client.Discover(req)
+	if err != nil {
+		return nil, hostapi.ConnectionID("0"), err
+	}
 	if discoveryRequest.Kato == 0 {
 		client.Stop()
 		return createDiscoveryEntries(response), hostapi.ConnectionID("0"), err

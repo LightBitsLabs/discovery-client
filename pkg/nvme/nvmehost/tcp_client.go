@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -78,10 +79,11 @@ type tcpClient struct {
 	ctx                      context.Context
 	cancel                   context.CancelFunc
 	logPagePaginationEnabled bool
+	nvmeHostIDPath           string
 }
 
 // NewClient creates NVMeTCP client
-func NewClient(logPagePaginationEnabled bool) TCPClient {
+func NewClient(logPagePaginationEnabled bool, nvmeHostIDPath string) TCPClient {
 	ctx, cancel := context.WithCancel(context.Background())
 	client := &tcpClient{
 		keepAlivePeriod:          dialerTmo, // timeout of dialer
@@ -90,6 +92,7 @@ func NewClient(logPagePaginationEnabled bool) TCPClient {
 		ctx:                      ctx,
 		cancel:                   cancel,
 		logPagePaginationEnabled: logPagePaginationEnabled,
+		nvmeHostIDPath:           nvmeHostIDPath,
 	}
 	return client
 }
@@ -116,18 +119,18 @@ func (client *tcpClient) AENChan() <-chan interface{} {
 func (client *tcpClient) getHostID() string {
 	// if host-id file doesn't exist generate it.
 	var id string
-	dat, err := ioutil.ReadFile(hostIDPath)
+	dat, err := ioutil.ReadFile(client.nvmeHostIDPath)
 	if err != nil || string(dat) == "" {
 		id := uuid.New().String() + "\n"
-		client.log.Debugf("creating hostID file at %v", hostIDPath)
+		client.log.Debugf("creating hostID file at %v", client.nvmeHostIDPath)
 		// make sure this folder exists before we create the hostid file.
-		if err := os.MkdirAll("/etc/nvme", 0755); err != nil {
-			client.log.WithError(err).Errorf("failed to create /etc/nvme folder")
+		if err := os.MkdirAll(filepath.Dir(client.nvmeHostIDPath), 0755); err != nil {
+			client.log.WithError(err).Errorf("failed to create %s folder", filepath.Dir(client.nvmeHostIDPath))
 			panic(err)
 		}
-		err = ioutil.WriteFile(hostIDPath, []byte(id), 0644)
+		err = ioutil.WriteFile(client.nvmeHostIDPath, []byte(id), 0644)
 		if err != nil {
-			client.log.WithError(err).Errorf("failed to create hostID file")
+			client.log.WithError(err).Errorf("failed to write to %s file", client.nvmeHostIDPath)
 			panic(err)
 		}
 		return removeDash(string(id))

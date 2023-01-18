@@ -24,9 +24,9 @@ import (
 
 	"github.com/coreos/go-systemd/daemon"
 	"github.com/lightbitslabs/discovery-client/model"
-	"github.com/lightbitslabs/discovery-client/service"
 	"github.com/lightbitslabs/discovery-client/pkg/clientconfig"
 	"github.com/lightbitslabs/discovery-client/pkg/nvme/nvmehost"
+	"github.com/lightbitslabs/discovery-client/service"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 )
@@ -76,7 +76,7 @@ func (app *App) Start() error {
 		}
 	}
 	app.cache = clientconfig.NewCache(app.ctx, app.cfg.ClientConfigDir, app.cfg.InternalDir, &app.cfg.AutoDetectEntries)
-	hostAPI := nvmehost.NewHostApi(app.cfg.LogPagePaginationEnabled)
+	hostAPI := nvmehost.NewHostApi(app.cfg.LogPagePaginationEnabled, app.cfg.NvmeHostIDPath)
 	app.svc = service.NewService(app.ctx, app.cache, hostAPI, app.cfg.ReconnectInterval, app.cfg.MaxIOQueues)
 	if err := app.svc.Start(); err != nil {
 		return err
