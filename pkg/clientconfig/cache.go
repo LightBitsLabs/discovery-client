@@ -368,7 +368,7 @@ func (c *cache) Run(sync bool) error {
 					continue
 				}
 				switch event.Op {
-				case Create:
+				case Create, Rename:
 					pairs, _ := c.fileAdded(event.Name)
 					c.createReferralsFile()
 					if len(pairs) > 0 {
