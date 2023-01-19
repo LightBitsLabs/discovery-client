@@ -280,7 +280,9 @@ func (s *service) connectCluster(clusterMapId clientconfig.ClientClusterPair) {
 // this method will iterate over all connections and will try to issue a Discover command.
 // The first one that succeeded will be selected as a persistent connection to the cluster.
 func (s *service) getLiveConnection(connections []*clientconfig.Connection, subsysNqn string) *clientconfig.Connection {
+	var connectionIPs []string
 	for _, conn := range connections {
+		connectionIPs = append(connectionIPs, conn.Key.Ip)
 		_, _, _, err := s.getLogPageEntries(conn, kato)
 		if err == nil {
 			s.log.Infof("connected successfully to cluster %s with %s", subsysNqn, conn)
@@ -288,7 +290,8 @@ func (s *service) getLiveConnection(connections []*clientconfig.Connection, subs
 		}
 		s.log.WithError(err).Errorf("Failed to connect with %s", conn)
 	}
-	s.log.Errorf("Failed to connect to cluster %s with all connections. Retry in %v seconds", subsysNqn, s.reconnectInterval)
+	s.log.Errorf("Failed to connect to cluster %s with all connections: %+v. Retry in %v seconds",
+		subsysNqn, connectionIPs, s.reconnectInterval)
 	return nil
 }
 
