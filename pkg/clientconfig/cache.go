@@ -139,6 +139,10 @@ func (cm ConnectionMap) AddConnection(key TKey, conn *Connection) {
 	cm[pair].ClusterConnectionsMap[key] = conn
 }
 
+func (cm ConnectionMap) DeleteConnection(clientClusterPair ClientClusterPair, key TKey) {
+	delete(cm[clientClusterPair].ClusterConnectionsMap, key)
+}
+
 func (cc ClusterConnections) Exists(c *Connection) bool {
 	for _, conn := range cc.ClusterConnectionsMap {
 		if reflect.DeepEqual(conn, c) {

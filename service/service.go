@@ -332,12 +332,13 @@ func (s *service) addConnections(cached clientconfig.ConnectionMap) {
 // Stop run logic of discovery client
 func (s *service) Stop() error {
 	s.cancel()
-	for subsysNqn, clusteConnections := range s.connections {
-		for key, conn := range clusteConnections.ClusterConnectionsMap {
+	for clientClusterPair, clusterConnections := range s.connections {
+		for key, conn := range clusterConnections.ClusterConnectionsMap {
 			if err := s.hostAPI.Disconnect(conn.ConnectionID); err != nil {
 				s.log.WithError(err).Errorf("Error in disconnecting connection %s", conn)
 			}
-			delete(s.connections[subsysNqn].ClusterConnectionsMap, key)
+			s.connections.DeleteConnection(clientClusterPair, key)
+			s.log.Debugf("removed connection: %s", conn)
 			conn.Stop()
 		}
 	}
