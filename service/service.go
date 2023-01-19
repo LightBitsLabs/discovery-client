@@ -174,20 +174,28 @@ func (s *service) Start() error {
 	go func() {
 		for {
 			select {
+			// this case hit when the cache is updated with new/removed connections.
+			// we would need to refresh the current connection list and invoke connectCluster.
 			case connections := <-s.cache.Connections():
 				s.log.Debug("received notification on changes in connections")
 				// remove from service connections that are no longer in cache
-				s.removeConnections(connections)
+				modified := make(map[clientconfig.ClientClusterPair]bool)
+				s.removeConnections(connections, modified)
 				// update service connections with new connections
-				s.addConnections(connections)
-				for pair, clientClusterConnections := range s.connections {
-					if clientClusterConnections.ActiveConnection != nil {
-						s.log.Debugf("Already connected to pair %+v", pair)
+				s.addConnections(connections, modified)
+				for clusterMapId, clientClusterConnections := range s.connections {
+					if mod, ok := modified[clusterMapId]; !ok || !mod {
 						continue
 					}
-					s.log.Debugf("connecting service to pair %v", pair)
-					go s.connectCluster(pair)
+					if clientClusterConnections.ActiveConnection != nil {
+						s.log.Debugf("already connected to cluster %+v", clusterMapId)
+						continue
+					}
+					s.log.Debugf("connecting service to cluster: %v", clusterMapId)
+					go s.connectCluster(clusterMapId)
 				}
+			// this case hit when we got AEN notification and we need to call getLogPage.
+			// this will then iterate over all log-pages and will connect to all.
 			case aenAlert := <-s.aggregateChan:
 				if aenAlert != nil {
 					conn := aenAlert.conn
@@ -293,39 +301,59 @@ func (s *service) getLiveConnection(connections []*clientconfig.Connection, subs
 	return nil
 }
 
-// A function for removing connections that are no longer cached
-func (s *service) removeConnections(fromCache clientconfig.ConnectionMap) {
-	for pair, cachedClusterConnections := range fromCache {
-		serviceClusterConnections, ok := s.connections[pair]
+// iterate over all cluster-connections.
+// for each cluster-connection verify that current connection exists in the new cache-connections Map
+// if exists leave it, if does not exists remove the connection and disconnect it.
+func (s *service) removeConnections(
+	fromCache clientconfig.ConnectionMap,
+	modified map[clientconfig.ClientClusterPair]bool,
+) {
+	for clusterMapId, cachedClusterConnections := range fromCache {
+		serviceClusterConnections, ok := s.connections[clusterMapId]
 		if !ok {
 			// New cluster-client pair from cache. No existing service connections to remove
+			if _, ok := modified[clusterMapId]; !ok {
+				modified[clusterMapId] = false
+			}
 			continue
 		}
+		// iterate over connections of cluster[clusterMapId]
 		for key, conn := range serviceClusterConnections.ClusterConnectionsMap {
 			if !cachedClusterConnections.Exists(conn) {
 				s.log.Infof("remove %s from service connections", conn)
 				if serviceClusterConnections.ActiveConnection == conn {
-					s.log.Debugf("Connection is active, disconnecting it")
+					s.log.Debugf("connection %s is the active, disconnecting it and setting active connection to nil", conn)
 					if err := s.hostAPI.Disconnect(conn.ConnectionID); err != nil {
-						s.log.WithError(err).Errorf("Error in disconnecting %s", conn)
+						s.log.WithError(err).Errorf("disconnecting connection: %s", conn)
 					}
+					serviceClusterConnections.ActiveConnection = nil
 				}
-				s.log.Debugf("Deleting %+v from service connections", conn)
+				s.log.Debugf("deleting connection %+v from service connections", conn)
 				delete(serviceClusterConnections.ClusterConnectionsMap, key)
 				conn.Stop()
+				modified[clusterMapId] = true
 			}
 		}
 	}
 }
 
 // A function for dealing with new connections from cache
-func (s *service) addConnections(cached clientconfig.ConnectionMap) {
-	for pair, clusterConnections := range cached {
+// it will iterate over all cached conn and will look for a conn that does not exist
+// in current-connection map - if found it will add it to current list.
+func (s *service) addConnections(
+	fromCache clientconfig.ConnectionMap,
+	modified map[clientconfig.ClientClusterPair]bool,
+) {
+	for clusterMapId, clusterConnections := range fromCache {
+		if _, ok := modified[clusterMapId]; !ok {
+			modified[clusterMapId] = false
+		}
 		for key, conn := range clusterConnections.ClusterConnectionsMap {
-			if !s.connections[pair].Exists(conn) {
+			if !s.connections[clusterMapId].Exists(conn) {
 				//update service connections
 				s.connections.AddConnection(key, conn)
 				s.log.Debugf("added connection: %s", conn)
+				modified[clusterMapId] = true
 			}
 		}
 	}
