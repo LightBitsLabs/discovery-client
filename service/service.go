@@ -88,7 +88,7 @@ func (s *service) Discover(req *hostapi.DiscoverRequest) ([]*hostapi.NvmeDiscPag
 	return logPageEntries, id, nil
 }
 
-func (s *service) getConnectionEntries(conn *clientconfig.Connection, kato time.Duration) ([]*hostapi.NvmeDiscPageEntry, []*hostapi.NvmeDiscPageEntry, *hostapi.DiscoverRequest, error) {
+func (s *service) getLogPageEntries(conn *clientconfig.Connection, kato time.Duration) ([]*hostapi.NvmeDiscPageEntry, []*hostapi.NvmeDiscPageEntry, *hostapi.DiscoverRequest, error) {
 	request := conn.GetDiscoveryRequest(kato)
 	logPageEntries, id, err := s.Discover(request)
 	//In case the connection is persistent keep the connection id
@@ -201,7 +201,7 @@ func (s *service) Start() error {
 						continue
 					}
 					s.log.Debugf("received notification through aggregate chan on %s", conn)
-					nvmeLogPageEntries, discLogPageEntries, request, err := s.getConnectionEntries(conn, time.Duration(0))
+					nvmeLogPageEntries, discLogPageEntries, request, err := s.getLogPageEntries(conn, time.Duration(0))
 					if err != nil {
 						s.log.WithError(err).Errorf("Error in receiving log page entries through %s. Start reconnect process", conn)
 						conn.SetState(false)
@@ -278,9 +278,11 @@ func (s *service) connectCluster(pair clientconfig.ClientClusterPair) {
 	}
 }
 
+// this method will iterate over all connections and will try to issue a Discover command.
+// The first one that succeeded will be selected as a persistent connection to the cluster.
 func (s *service) getLiveConnection(connections []*clientconfig.Connection, subsysNqn string) *clientconfig.Connection {
 	for _, conn := range connections {
-		_, _, _, err := s.getConnectionEntries(conn, kato)
+		_, _, _, err := s.getLogPageEntries(conn, kato)
 		if err == nil {
 			s.log.Infof("connected successfully to cluster %s with %s", subsysNqn, conn)
 			return conn
