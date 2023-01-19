@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
@@ -112,6 +113,21 @@ func (c *Connection) SetState(newState bool) {
 type ClusterConnections struct {
 	ClusterConnectionsMap map[TKey]*Connection
 	ActiveConnection      *Connection
+}
+
+func (c ClusterConnections) GetRandomConnectionList() []*Connection {
+	clusterConnectionsList := make([]*Connection, len(c.ClusterConnectionsMap))
+	ind := 0
+	for _, conn := range c.ClusterConnectionsMap {
+		clusterConnectionsList[ind] = conn
+		ind++
+	}
+	//Generate a random permutation of connections order to balance used target among clients
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(clusterConnectionsList), func(i, j int) {
+		clusterConnectionsList[i], clusterConnectionsList[j] = clusterConnectionsList[j], clusterConnectionsList[i]
+	})
+	return clusterConnectionsList
 }
 
 type ClientClusterPair struct {

@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 
-	"math/rand"
 	"sync"
 	"time"
 
@@ -233,33 +232,24 @@ func (s *service) Start() error {
 	return nil
 }
 
-func (s *service) connectCluster(pair clientconfig.ClientClusterPair) {
-	clientClusterConnections, ok := s.connections[pair]
-	clientClusterConnectionsMap := clientClusterConnections.ClusterConnectionsMap
-	if !ok || len(clientClusterConnectionsMap) == 0 {
-		s.log.Errorf("Cannot connect to cluster with subsysNQN %s from client with hostnqn %s. No connections found", pair.ClusterNqn, pair.HostNqn)
+// pair would be the identifier of the cluster we want to connect to.
+// the DC support multiple clusters at the same time, and this method will
+// try to connect to single DS service in cluster defined by `pair`
+func (s *service) connectCluster(clusterMapId clientconfig.ClientClusterPair) {
+	clientClusterConnections, ok := s.connections[clusterMapId]
+	if !ok || len(clientClusterConnections.ClusterConnectionsMap) == 0 {
+		s.log.Errorf("cannot connect to cluster with subsysNQN %s from client with hostnqn %s. no connections found",
+			clusterMapId.ClusterNqn, clusterMapId.HostNqn)
 		return
 	}
-	clientClusterConnections.ActiveConnection = nil
-	s.connections[pair] = clientClusterConnections
+	clusterConnectionsList := clientClusterConnections.GetRandomConnectionList()
 
-	clusterConnectionsList := make([]*clientconfig.Connection, len(clientClusterConnectionsMap))
-	ind := 0
-	for _, conn := range clientClusterConnectionsMap {
-		clusterConnectionsList[ind] = conn
-		ind++
-	}
-	//Generate a random permutation of connections order to balance used target among clients
-	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(clusterConnectionsList), func(i, j int) {
-		clusterConnectionsList[i], clusterConnectionsList[j] = clusterConnectionsList[j], clusterConnectionsList[i]
-	})
-	s.log.Infof("Connecting to cluster %s with hostnqn %s", pair.ClusterNqn, pair.HostNqn)
+	s.log.Infof("trying to connect to cluster %s as hostnqn %s", clusterMapId.ClusterNqn, clusterMapId.HostNqn)
 	aen := hostapi.AENStruct{
 		AenChange:    true,
 		ServerChange: nil,
 	}
-	if conn := s.getLiveConnection(clusterConnectionsList, pair.ClusterNqn); conn != nil {
+	if conn := s.getLiveConnection(clusterConnectionsList, clusterMapId.ClusterNqn); conn != nil {
 		s.multiplexNewConnection(conn)
 		s.wg.Add(1)
 		s.log.Debugf("Pushing AEN notification to live %s to trigger discovery on new connection", conn)
@@ -272,7 +262,7 @@ func (s *service) connectCluster(pair clientconfig.ClientClusterPair) {
 	for {
 		select {
 		case <-ticker.C:
-			if conn := s.getLiveConnection(clusterConnectionsList, pair.ClusterNqn); conn != nil {
+			if conn := s.getLiveConnection(clusterConnectionsList, clusterMapId.ClusterNqn); conn != nil {
 				s.multiplexNewConnection(conn)
 				s.wg.Add(1)
 				s.log.Debugf("Pushing AEN notification to live connection %s to trigger discovery on it", conn)
@@ -280,7 +270,8 @@ func (s *service) connectCluster(pair clientconfig.ClientClusterPair) {
 				return
 			}
 		case <-s.ctx.Done():
-			s.log.Infof("Discovery client canceled, aborting attempts to connect to cluster %s from %s", pair.ClusterNqn, pair.HostNqn)
+			s.log.Infof("Discovery client canceled, aborting attempts to connect to cluster %s from %s",
+				clusterMapId.ClusterNqn, clusterMapId.HostNqn)
 			return
 		}
 	}
