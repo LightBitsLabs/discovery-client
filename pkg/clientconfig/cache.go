@@ -462,11 +462,11 @@ func existEntry(checkedEntry *Entry, entriesList []*Entry) bool {
 
 func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
 	if existEntry(newEntry, c.cacheEntries) {
-		c.log.Infof("Entry %+v already found in cache", newEntry)
+		c.log.Debugf("entry %+v already found in cache - no need to add", newEntry)
 		return ClientClusterPair{}, nil
 	}
 	c.cacheEntries = append(c.cacheEntries, newEntry)
-	c.log.Debugf("Added cache entry %+v. Cache has now %d entries", newEntry, len(c.cacheEntries))
+	c.log.Debugf("added cache entry %+v. Cache has now %d entries", newEntry, len(c.cacheEntries))
 	metrics.Metrics.EntriesTotal.WithLabelValues().Inc()
 
 	key := TKey{transport: newEntry.Transport, Ip: newEntry.Traddr, port: newEntry.Trsvcid, Nqn: newEntry.Subsysnqn, hostnqn: newEntry.Hostnqn}
@@ -480,7 +480,7 @@ func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
 		conn.Hostnqn = newEntry.Hostnqn
 		c.connections.AddConnection(key, conn)
 		metrics.Metrics.Connections.WithLabelValues(key.transport, key.Ip, strconv.Itoa(key.port), key.Nqn, conn.Hostnqn).Inc()
-		c.log.Debugf("Added %s to cache connetions", conn)
+		c.log.Debugf("Added %s to cache connections", conn)
 		return pair, nil
 	}
 	err := fmt.Errorf("Entry %+v not cached, though %s is in cache", newEntry, conn)

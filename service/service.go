@@ -135,7 +135,7 @@ func (s *service) getLogPageEntries(conn *clientconfig.Connection, kato time.Dur
 	return nvmeLogPageEntries, discLogPageEntries, request, nil
 }
 
-//On a new connection, add it to the connections that multiplex AEN events to the service AEN channel
+// On a new connection, add it to the connections that multiplex AEN events to the service AEN channel
 func (s *service) multiplexNewConnection(conn *clientconfig.Connection) {
 	go func() {
 		defer s.wg.Done()
@@ -150,7 +150,7 @@ func (s *service) multiplexNewConnection(conn *clientconfig.Connection) {
 					return
 				}
 				if event.ServerChange != nil {
-					s.log.Infof("%s keep alive failed", conn)
+					s.log.Warnf("%s keep alive failed: %s", conn, event.ServerChange.Error())
 					conn.SetState(false)
 					s.aggregateChan <- &aenNotification{conn, event}
 					return
@@ -325,7 +325,7 @@ func (s *service) addConnections(cached clientconfig.ConnectionMap) {
 			if !s.connections[pair].Exists(conn) {
 				//update service connections
 				s.connections.AddConnection(key, conn)
-				s.log.Debugf("add %s to service", conn)
+				s.log.Debugf("added connection: %s", conn)
 			}
 		}
 	}
