@@ -337,15 +337,19 @@ func (s *service) removeConnections(
 		// iterate over connections of cluster[clusterMapId]
 		for key, conn := range serviceClusterConnections.ClusterConnectionsMap {
 			if !cachedClusterConnections.Exists(conn) {
-				s.log.Infof("remove %s from service connections", conn)
+				log := s.log.WithField("subsys-nqn", conn.Key.Nqn).
+					WithField("ip", conn.Key.Ip).
+					WithField("id", conn.ConnectionID)
+
+				log.Infof("remove from service connections")
 				if serviceClusterConnections.ActiveConnection == conn {
-					s.log.Debugf("connection %s is the active, disconnecting it and setting active connection to nil", conn)
+					log.Debugf("disconnecting active connection and setting active connection to nil")
 					if err := s.hostAPI.Disconnect(conn.ConnectionID); err != nil {
-						s.log.WithError(err).Errorf("disconnecting connection: %s", conn)
+						log.WithError(err).Errorf("disconnecting connection")
 					}
 					serviceClusterConnections.ActiveConnection = nil
 				}
-				s.log.Debugf("deleting connection %+v from service connections", conn)
+				log.Debugf("deleting connection from service connections")
 				delete(serviceClusterConnections.ClusterConnectionsMap, key)
 				conn.Stop()
 				modified[clusterMapId] = true
@@ -381,11 +385,14 @@ func (s *service) Stop() error {
 	s.cancel()
 	for clientClusterPair, clusterConnections := range s.connections {
 		for key, conn := range clusterConnections.ClusterConnectionsMap {
+			log := s.log.WithField("subsys-nqn", conn.Key.Nqn).
+				WithField("ip", conn.Key.Ip).
+				WithField("id", conn.ConnectionID)
 			if err := s.hostAPI.Disconnect(conn.ConnectionID); err != nil {
-				s.log.WithError(err).Errorf("Error in disconnecting connection %s", conn)
+				log.WithError(err).Errorf("Error in disconnecting connection %s", conn)
 			}
 			s.connections.DeleteConnection(clientClusterPair, key)
-			s.log.Debugf("removed connection: %s", conn)
+			log.Debugf("removed connection")
 			conn.Stop()
 		}
 	}
