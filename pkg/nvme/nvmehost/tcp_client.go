@@ -162,23 +162,13 @@ func (client *tcpClient) Discover(discoverRequest *DiscoverRequest) ([]*NvmeDisc
 	client.tcpConn = tcpConn
 	client.tcpQ = newNvmeTCPQueue(1, conn)
 
-	if err := client.tcpQ.sendNvmeInitConnection(); err != nil {
-		return nil, err
-	}
-
-	if err := client.tcpQ.recvNvmeInitConnResponse(); err != nil {
-		return nil, err
-	}
-
 	// now the code become async and we need to use the sq completion queue.
 	client.wg.Add(1)
 	go func() {
 		defer client.wg.Done()
 		select {
-
 		case <-client.ctx.Done():
 			return
-
 		// recvPdu creates a tmp chan
 		case _, alive := <-client.tcpQ.recvPdu(client.ctx):
 			if !alive {
@@ -189,6 +179,10 @@ func (client *tcpClient) Discover(discoverRequest *DiscoverRequest) ([]*NvmeDisc
 			// and end this goroutine for discover request
 		}
 	}()
+
+	if err := client.tcpQ.sendNvmeInitConnection(); err != nil {
+		return nil, err
+	}
 
 	if err := client.tcpQ.sendConnectRequest(client.ctx, discoverRequest.Hostnqn, hostID); err != nil {
 		//client.log.WithError(err).Errorf("NVMe connect failed")
