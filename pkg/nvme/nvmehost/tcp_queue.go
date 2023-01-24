@@ -83,13 +83,14 @@ func (queue *tcpQueue) destroy() {
 	// metrics.Metrics.TCPQueues.DeleteLabelValues(queue.serviceID, queue.tcpConn.LocalAddr().String(), queue.tcpConn.RemoteAddr().String())
 }
 
-/// https://github.com/torvalds/linux/blob/1ee08de1e234d95b5b4f866878b72fceb5372904/drivers/nvme/host/tcp.c
+// https://github.com/torvalds/linux/blob/1ee08de1e234d95b5b4f866878b72fceb5372904/drivers/nvme/host/tcp.c
 func (queue *tcpQueue) sendNvmeInitConnection() error {
 	hdr := &nvme.TCPHeaderType{
-		Hlen: C.sizeof_struct_nvme_tcp_icreq_pdu,
-		Plen: C.sizeof_struct_nvme_tcp_icreq_pdu,
-		Pdo:  0,
-		Type: C.nvme_tcp_icreq,
+		Hlen:  C.sizeof_struct_nvme_tcp_icreq_pdu,
+		Plen:  C.sizeof_struct_nvme_tcp_icreq_pdu,
+		Pdo:   0,
+		Type:  C.nvme_tcp_icreq,
+		Flags: 0,
 	}
 
 	if err := struc.Pack(queue.tcpWriter, hdr); err != nil {
@@ -108,32 +109,24 @@ func (queue *tcpQueue) sendNvmeInitConnection() error {
 	if err := queue.tcpWriter.Flush(); err != nil {
 		return err
 	}
+
 	return nil
 }
 
-func (queue *tcpQueue) recvNvmeInitConnResponse() error {
-	tcpHeader, err := queue.recvTCPHeader()
-	if err != nil {
-		return err
-	}
-
+func (queue *tcpQueue) recvNvmeInitConnResponse(pduReader *bytes.Reader) (*nvme.TCPIcrespPdu, error) {
 	icresp := &nvme.TCPIcrespPdu{}
-	if err := struc.Unpack(queue.tcpReader, icresp); err != nil {
-		return err
-	}
-
-	if tcpHeader.Type != C.nvme_tcp_icresp {
-		return fmt.Errorf("queue %d: bad type returned %d", queue.id, tcpHeader.Type)
+	if err := struc.Unpack(pduReader, icresp); err != nil {
+		return nil, err
 	}
 
 	if icresp.Pfv != C.NVME_TCP_PFV_1_0 {
-		return fmt.Errorf("queue %d: bad pfv returned %d", queue.id, icresp.Pfv)
+		return nil, fmt.Errorf("queue %d: bad pfv returned %d", queue.id, icresp.Pfv)
 	}
 
 	if icresp.Cpda != 0 {
-		return fmt.Errorf("queue %d: unsupported cpda returned %d", queue.id, icresp.Cpda)
+		return nil, fmt.Errorf("queue %d: unsupported cpda returned %d", queue.id, icresp.Cpda)
 	}
-	return nil
+	return icresp, nil
 }
 
 func (queue *tcpQueue) sendConnectRequest(ctx context.Context, hostnqn string, hostID string) error {
@@ -596,6 +589,12 @@ func (queue *tcpQueue) handleRecv() error {
 	if err != nil {
 		return err
 	}
+	// this case cover response from init-connection request. it is not
+	// the same as all other nvme-requests - we didn't push it to the
+	// pending requests queue hence we don't mark it as completed.
+	if completedRequest == nil {
+		return nil
+	}
 	if completedRequest.Completion() != nil {
 		switch completedRequest.(type) {
 		case *nvme.AsyncEventRequest:
@@ -632,6 +631,14 @@ func (queue *tcpQueue) parseResponse(pduType uint8, pdu []byte) (nvme.Request, e
 	var commandID uint16
 	pduReader := bytes.NewReader(pdu)
 	switch pduType {
+	case C.nvme_tcp_icresp:
+		_, err := queue.recvNvmeInitConnResponse(pduReader)
+		if err != nil {
+			return nil, err
+		}
+		// current code does not handle this response as an outstanding requests.
+		// it will not try to match such request from queue.outstandingRequests
+		return nil, nil
 	case C.nvme_tcp_rsp:
 		cqe, err := queue.recvCqe(pduReader)
 		// we might got error status but still got the cqe so we proceed with the parsing

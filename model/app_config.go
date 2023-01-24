@@ -50,6 +50,7 @@ type AppConfig struct {
 	LogPagePaginationEnabled bool              `yaml:"logPagePaginationEnabled"`
 	MaxIOQueues              int               `yaml:"maxIOQueues"`
 	AutoDetectEntries        AutoDetectEntries `yaml:"autoDetectEntries,omitempty"`
+	NvmeHostIDPath           string            `yaml:"nvmeHostIDPath,omitempty"`
 }
 
 func (cfg *AppConfig) verifyConfigurationIsValid() error {

@@ -17,8 +17,8 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 
-	"math/rand"
 	"sync"
 	"time"
 
@@ -88,7 +88,7 @@ func (s *service) Discover(req *hostapi.DiscoverRequest) ([]*hostapi.NvmeDiscPag
 	return logPageEntries, id, nil
 }
 
-func (s *service) getConnectionEntries(conn *clientconfig.Connection, kato time.Duration) ([]*hostapi.NvmeDiscPageEntry, []*hostapi.NvmeDiscPageEntry, *hostapi.DiscoverRequest, error) {
+func (s *service) getLogPageEntries(conn *clientconfig.Connection, kato time.Duration) ([]*hostapi.NvmeDiscPageEntry, []*hostapi.NvmeDiscPageEntry, *hostapi.DiscoverRequest, error) {
 	request := conn.GetDiscoveryRequest(kato)
 	logPageEntries, id, err := s.Discover(request)
 	//In case the connection is persistent keep the connection id
@@ -135,7 +135,7 @@ func (s *service) getConnectionEntries(conn *clientconfig.Connection, kato time.
 	return nvmeLogPageEntries, discLogPageEntries, request, nil
 }
 
-//On a new connection, add it to the connections that multiplex AEN events to the service AEN channel
+// On a new connection, add it to the connections that multiplex AEN events to the service AEN channel
 func (s *service) multiplexNewConnection(conn *clientconfig.Connection) {
 	go func() {
 		defer s.wg.Done()
@@ -150,7 +150,7 @@ func (s *service) multiplexNewConnection(conn *clientconfig.Connection) {
 					return
 				}
 				if event.ServerChange != nil {
-					s.log.Infof("%s keep alive failed", conn)
+					s.log.Warnf("%s keep alive failed: %s", conn, event.ServerChange.Error())
 					conn.SetState(false)
 					s.aggregateChan <- &aenNotification{conn, event}
 					return
@@ -171,47 +171,94 @@ func (s *service) Start() error {
 	if err := s.cache.Run(true); err != nil {
 		return err
 	}
+
+	triggerReconnectToClusterCh := make(chan clientconfig.ClientClusterPair)
+
 	go func() {
+		var stopCh chan bool
 		for {
 			select {
+			case clusterMapId := <-triggerReconnectToClusterCh:
+				// first - close any running scheduler for reconnect
+				if stopCh != nil {
+					close(stopCh)
+				}
+				err := s.reconnectToCluster(clusterMapId)
+				if err != nil {
+					// reconnect failed. will schedule a reconnect goroutine.
+					// create a new goroutine that would try to reconnect.
+					ticker := time.NewTicker(s.reconnectInterval)
+					stopCh = make(chan bool, 1)
+					go func() {
+						defer ticker.Stop()
+						s.log.Infof("%s. schedule reconnect in %s", err, s.reconnectInterval)
+						select {
+						case <-ticker.C:
+							triggerReconnectToClusterCh <- clusterMapId
+						case <-stopCh:
+							return
+						}
+					}()
+				}
 			case connections := <-s.cache.Connections():
+				// this case hit when the cache is updated with new/removed connections.
+				// we would need to refresh the current connection list and invoke connectCluster.
 				s.log.Debug("received notification on changes in connections")
 				// remove from service connections that are no longer in cache
-				s.removeConnections(connections)
+				modified := make(map[clientconfig.ClientClusterPair]bool)
+				s.removeConnections(connections, modified)
 				// update service connections with new connections
-				s.addConnections(connections)
-				for pair, clientClusterConnections := range s.connections {
-					if clientClusterConnections.ActiveConnection != nil {
-						s.log.Debugf("Already connected to pair %+v", pair)
+				s.addConnections(connections, modified)
+				for clusterMapId, clientClusterConnections := range s.connections {
+					if mod, ok := modified[clusterMapId]; !ok || !mod {
 						continue
 					}
-					s.log.Debugf("connecting service to pair %v", pair)
-					go s.connectCluster(pair)
+					if clientClusterConnections.ActiveConnection != nil {
+						s.log.Debugf("already connected to cluster %+v", clusterMapId)
+						continue
+					}
+					s.log.Debugf("connecting service to cluster: %v", clusterMapId)
+					go func(clusterMapId clientconfig.ClientClusterPair) {
+						triggerReconnectToClusterCh <- clusterMapId
+					}(clusterMapId)
 				}
 			case aenAlert := <-s.aggregateChan:
+				// this case hit when we got AEN notification and we need to call getLogPage.
+				// this will then iterate over all log-pages and will connect to all.
 				if aenAlert != nil {
 					conn := aenAlert.conn
-					pair := clientconfig.ClientClusterPair{
+					clusterMapId := clientconfig.ClientClusterPair{
 						ClusterNqn: conn.Key.Nqn,
 						HostNqn:    conn.Hostnqn,
 					}
 					aen := aenAlert.aen
+					// meaning we have a new server in the cluster and we would want to invoke reconnect.
 					if aen.ServerChange != nil {
-						go s.connectCluster(pair)
+						go func() {
+							triggerReconnectToClusterCh <- clusterMapId
+						}()
 						continue
 					}
 					s.log.Debugf("received notification through aggregate chan on %s", conn)
-					nvmeLogPageEntries, discLogPageEntries, request, err := s.getConnectionEntries(conn, time.Duration(0))
+					nvmeLogPageEntries, discLogPageEntries, request, err := s.getLogPageEntries(conn, time.Duration(0))
 					if err != nil {
-						s.log.WithError(err).Errorf("Error in receiving log page entries through %s. Start reconnect process", conn)
+						// failed issuing get-log-page command, meaning we should try
+						// to reconnect to the cluster - probably different service, that would provide better answer.
+						s.log.WithError(err).Errorf("error in receiving log page entries through %s. Start reconnect process", conn)
 						conn.SetState(false)
-						go s.connectCluster(pair)
+						go func() {
+							triggerReconnectToClusterCh <- clusterMapId
+						}()
 						continue
 					}
 					nvmeclient.ConnectAllNVMEDevices(nvmeLogPageEntries, request.Hostnqn, request.Transport, s.maxIOQueues)
 					refMap := clientconfig.ReferralMap{}
 					for _, referral := range discLogPageEntries {
-						refKey := clientconfig.ReferralKey{Ip: referral.Traddr, Port: referral.TrsvcID, DPSubNqn: conn.Key.Nqn, Hostnqn: conn.Hostnqn}
+						refKey := clientconfig.ReferralKey{
+							Ip:       referral.Traddr,
+							Port:     referral.TrsvcID,
+							DPSubNqn: conn.Key.Nqn,
+							Hostnqn:  conn.Hostnqn}
 						refMap[refKey] = referral
 					}
 					s.cache.HandleReferrals(refMap)
@@ -225,105 +272,109 @@ func (s *service) Start() error {
 	return nil
 }
 
-func (s *service) connectCluster(pair clientconfig.ClientClusterPair) {
-	clientClusterConnections, ok := s.connections[pair]
-	clientClusterConnectionsMap := clientClusterConnections.ClusterConnectionsMap
-	if !ok || len(clientClusterConnectionsMap) == 0 {
-		s.log.Errorf("Cannot connect to cluster with subsysNQN %s from client with hostnqn %s. No connections found", pair.ClusterNqn, pair.HostNqn)
-		return
+// pair would be the identifier of the cluster we want to connect to.
+// the DC support multiple clusters at the same time, and this method will
+// try to connect to single DS service in cluster defined by `pair`
+func (s *service) reconnectToCluster(clusterMapId clientconfig.ClientClusterPair) error {
+	clientClusterConnections, ok := s.connections[clusterMapId]
+	if !ok || len(clientClusterConnections.ClusterConnectionsMap) == 0 {
+		s.log.Errorf("cannot connect to cluster with subsysNQN %s from client with hostnqn %s. no connections found",
+			clusterMapId.ClusterNqn, clusterMapId.HostNqn)
+		return nil
 	}
-	clientClusterConnections.ActiveConnection = nil
-	s.connections[pair] = clientClusterConnections
+	clusterConnectionsList := clientClusterConnections.GetRandomConnectionList()
 
-	clusterConnectionsList := make([]*clientconfig.Connection, len(clientClusterConnectionsMap))
-	ind := 0
-	for _, conn := range clientClusterConnectionsMap {
-		clusterConnectionsList[ind] = conn
-		ind++
-	}
-	//Generate a random permutation of connections order to balance used target among clients
-	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(clusterConnectionsList), func(i, j int) {
-		clusterConnectionsList[i], clusterConnectionsList[j] = clusterConnectionsList[j], clusterConnectionsList[i]
-	})
-	s.log.Infof("Connecting to cluster %s with hostnqn %s", pair.ClusterNqn, pair.HostNqn)
+	s.log.Infof("trying to connect to cluster %s as hostnqn %s", clusterMapId.ClusterNqn, clusterMapId.HostNqn)
 	aen := hostapi.AENStruct{
 		AenChange:    true,
 		ServerChange: nil,
 	}
-	if conn := s.getLiveConnection(clusterConnectionsList, pair.ClusterNqn); conn != nil {
-		s.multiplexNewConnection(conn)
-		s.wg.Add(1)
-		s.log.Debugf("Pushing AEN notification to live %s to trigger discovery on new connection", conn)
-		conn.AENChan <- aen
-		s.log.Debugf("Returned from pushing AEN notification to live %s to trigger discovery on new connection", conn)
-		return
+	conn, err := s.getLiveConnection(clusterConnectionsList, clusterMapId.ClusterNqn)
+	if err != nil {
+		return err
 	}
-	ticker := time.NewTicker(s.reconnectInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			if conn := s.getLiveConnection(clusterConnectionsList, pair.ClusterNqn); conn != nil {
-				s.multiplexNewConnection(conn)
-				s.wg.Add(1)
-				s.log.Debugf("Pushing AEN notification to live connection %s to trigger discovery on it", conn)
-				conn.AENChan <- aen
-				return
-			}
-		case <-s.ctx.Done():
-			s.log.Infof("Discovery client canceled, aborting attempts to connect to cluster %s from %s", pair.ClusterNqn, pair.HostNqn)
-			return
-		}
-	}
-}
-
-func (s *service) getLiveConnection(connections []*clientconfig.Connection, subsysNqn string) *clientconfig.Connection {
-	for _, conn := range connections {
-		_, _, _, err := s.getConnectionEntries(conn, kato)
-		if err == nil {
-			s.log.Infof("connected successfully to cluster %s with %s", subsysNqn, conn)
-			return conn
-		}
-		s.log.WithError(err).Errorf("Failed to connect with %s", conn)
-	}
-	s.log.Errorf("Failed to connect to cluster %s with all connections. Retry in %v seconds", subsysNqn, s.reconnectInterval)
+	s.multiplexNewConnection(conn)
+	s.wg.Add(1)
+	s.log.Debugf("pushing AEN notification to live %s to trigger discovery on new connection", conn)
+	conn.AENChan <- aen
+	s.log.Debugf("returned from pushing AEN notification to live %s to trigger discovery on new connection", conn)
 	return nil
 }
 
-// A function for removing connections that are no longer cached
-func (s *service) removeConnections(fromCache clientconfig.ConnectionMap) {
-	for pair, cachedClusterConnections := range fromCache {
-		serviceClusterConnections, ok := s.connections[pair]
+// this method will iterate over all connections and will try to issue a Discover command.
+// The first one that succeeded will be selected as a persistent connection to the cluster.
+func (s *service) getLiveConnection(connections []*clientconfig.Connection, subsysNqn string) (*clientconfig.Connection, error) {
+	var connectionIPs []string
+	for _, conn := range connections {
+		connectionIPs = append(connectionIPs, conn.Key.Ip)
+		_, _, _, err := s.getLogPageEntries(conn, kato)
+		if err == nil {
+			s.log.Infof("connected successfully to cluster %s with %s after trying %+v",
+				subsysNqn, conn, connectionIPs)
+			return conn, nil
+		}
+	}
+	return nil, fmt.Errorf("connect to cluster %s failed with all (%d) connections: %+v",
+		subsysNqn, len(connectionIPs), connectionIPs)
+}
+
+// iterate over all cluster-connections.
+// for each cluster-connection verify that current connection exists in the new cache-connections Map
+// if exists leave it, if does not exists remove the connection and disconnect it.
+func (s *service) removeConnections(
+	fromCache clientconfig.ConnectionMap,
+	modified map[clientconfig.ClientClusterPair]bool,
+) {
+	for clusterMapId, cachedClusterConnections := range fromCache {
+		serviceClusterConnections, ok := s.connections[clusterMapId]
 		if !ok {
 			// New cluster-client pair from cache. No existing service connections to remove
+			if _, ok := modified[clusterMapId]; !ok {
+				modified[clusterMapId] = false
+			}
 			continue
 		}
+		// iterate over connections of cluster[clusterMapId]
 		for key, conn := range serviceClusterConnections.ClusterConnectionsMap {
 			if !cachedClusterConnections.Exists(conn) {
-				s.log.Infof("remove %s from service connections", conn)
+				log := s.log.WithField("subsys-nqn", conn.Key.Nqn).
+					WithField("ip", conn.Key.Ip).
+					WithField("id", conn.ConnectionID)
+
+				log.Infof("remove from service connections")
 				if serviceClusterConnections.ActiveConnection == conn {
-					s.log.Debugf("Connection is active, disconnecting it")
+					log.Debugf("disconnecting active connection and setting active connection to nil")
 					if err := s.hostAPI.Disconnect(conn.ConnectionID); err != nil {
-						s.log.WithError(err).Errorf("Error in disconnecting %s", conn)
+						log.WithError(err).Errorf("disconnecting connection")
 					}
+					serviceClusterConnections.ActiveConnection = nil
 				}
-				s.log.Debugf("Deleting %+v from service connections", conn)
+				log.Debugf("deleting connection from service connections")
 				delete(serviceClusterConnections.ClusterConnectionsMap, key)
 				conn.Stop()
+				modified[clusterMapId] = true
 			}
 		}
 	}
 }
 
 // A function for dealing with new connections from cache
-func (s *service) addConnections(cached clientconfig.ConnectionMap) {
-	for pair, clusterConnections := range cached {
+// it will iterate over all cached conn and will look for a conn that does not exist
+// in current-connection map - if found it will add it to current list.
+func (s *service) addConnections(
+	fromCache clientconfig.ConnectionMap,
+	modified map[clientconfig.ClientClusterPair]bool,
+) {
+	for clusterMapId, clusterConnections := range fromCache {
+		if _, ok := modified[clusterMapId]; !ok {
+			modified[clusterMapId] = false
+		}
 		for key, conn := range clusterConnections.ClusterConnectionsMap {
-			if !s.connections[pair].Exists(conn) {
+			if !s.connections[clusterMapId].Exists(conn) {
 				//update service connections
 				s.connections.AddConnection(key, conn)
-				s.log.Debugf("add %s to service", conn)
+				s.log.Debugf("added connection: %s", conn)
+				modified[clusterMapId] = true
 			}
 		}
 	}
@@ -332,12 +383,16 @@ func (s *service) addConnections(cached clientconfig.ConnectionMap) {
 // Stop run logic of discovery client
 func (s *service) Stop() error {
 	s.cancel()
-	for subsysNqn, clusteConnections := range s.connections {
-		for key, conn := range clusteConnections.ClusterConnectionsMap {
+	for clientClusterPair, clusterConnections := range s.connections {
+		for key, conn := range clusterConnections.ClusterConnectionsMap {
+			log := s.log.WithField("subsys-nqn", conn.Key.Nqn).
+				WithField("ip", conn.Key.Ip).
+				WithField("id", conn.ConnectionID)
 			if err := s.hostAPI.Disconnect(conn.ConnectionID); err != nil {
-				s.log.WithError(err).Errorf("Error in disconnecting connection %s", conn)
+				log.WithError(err).Errorf("Error in disconnecting connection %s", conn)
 			}
-			delete(s.connections[subsysNqn].ClusterConnectionsMap, key)
+			s.connections.DeleteConnection(clientClusterPair, key)
+			log.Debugf("removed connection")
 			conn.Stop()
 		}
 	}

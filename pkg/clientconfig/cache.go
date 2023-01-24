@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
@@ -114,6 +115,21 @@ type ClusterConnections struct {
 	ActiveConnection      *Connection
 }
 
+func (c ClusterConnections) GetRandomConnectionList() []*Connection {
+	clusterConnectionsList := make([]*Connection, len(c.ClusterConnectionsMap))
+	ind := 0
+	for _, conn := range c.ClusterConnectionsMap {
+		clusterConnectionsList[ind] = conn
+		ind++
+	}
+	//Generate a random permutation of connections order to balance used target among clients
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(clusterConnectionsList), func(i, j int) {
+		clusterConnectionsList[i], clusterConnectionsList[j] = clusterConnectionsList[j], clusterConnectionsList[i]
+	})
+	return clusterConnectionsList
+}
+
 type ClientClusterPair struct {
 	ClusterNqn string
 	HostNqn    string
@@ -137,6 +153,10 @@ func (cm ConnectionMap) AddConnection(key TKey, conn *Connection) {
 		cm[pair] = clusterConns
 	}
 	cm[pair].ClusterConnectionsMap[key] = conn
+}
+
+func (cm ConnectionMap) DeleteConnection(clientClusterPair ClientClusterPair, key TKey) {
+	delete(cm[clientClusterPair].ClusterConnectionsMap, key)
 }
 
 func (cc ClusterConnections) Exists(c *Connection) bool {
@@ -364,7 +384,7 @@ func (c *cache) Run(sync bool) error {
 					continue
 				}
 				switch event.Op {
-				case Create:
+				case Create, Rename:
 					pairs, _ := c.fileAdded(event.Name)
 					c.createReferralsFile()
 					if len(pairs) > 0 {
@@ -458,11 +478,11 @@ func existEntry(checkedEntry *Entry, entriesList []*Entry) bool {
 
 func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
 	if existEntry(newEntry, c.cacheEntries) {
-		c.log.Infof("Entry %+v already found in cache", newEntry)
+		c.log.Debugf("entry %+v already found in cache - no need to add", newEntry)
 		return ClientClusterPair{}, nil
 	}
 	c.cacheEntries = append(c.cacheEntries, newEntry)
-	c.log.Debugf("Added cache entry %+v. Cache has now %d entries", newEntry, len(c.cacheEntries))
+	c.log.Debugf("added cache entry %+v. Cache has now %d entries", newEntry, len(c.cacheEntries))
 	metrics.Metrics.EntriesTotal.WithLabelValues().Inc()
 
 	key := TKey{transport: newEntry.Transport, Ip: newEntry.Traddr, port: newEntry.Trsvcid, Nqn: newEntry.Subsysnqn, hostnqn: newEntry.Hostnqn}
@@ -476,7 +496,7 @@ func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
 		conn.Hostnqn = newEntry.Hostnqn
 		c.connections.AddConnection(key, conn)
 		metrics.Metrics.Connections.WithLabelValues(key.transport, key.Ip, strconv.Itoa(key.port), key.Nqn, conn.Hostnqn).Inc()
-		c.log.Debugf("Added %s to cache connetions", conn)
+		c.log.Debugf("Added %s to cache connections", conn)
 		return pair, nil
 	}
 	err := fmt.Errorf("Entry %+v not cached, though %s is in cache", newEntry, conn)

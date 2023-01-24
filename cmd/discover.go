@@ -73,7 +73,7 @@ func discoverCmdFunc(cmd *cobra.Command, args []string) error {
 		Transport: viper.GetString("discover.transport"),
 	}
 
-	hostAPI := nvmehost.NewHostApi(true)
+	hostAPI := nvmehost.NewHostApi(true, "/etc/nvme/hostid")
 	logPageEntries, _, err := hostAPI.Discover(entry)
 	if err != nil {
 		return err
