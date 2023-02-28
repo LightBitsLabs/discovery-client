@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"syscall"
 
 	"github.com/google/uuid"
 	"github.com/lightbitslabs/discovery-client/pkg/nvme"
@@ -57,6 +58,7 @@ type DiscoverRequest struct {
 	Hostnqn   string
 	Hostaddr  string
 	Kato      time.Duration
+	HostIface string
 }
 
 // TCPClient tcp based client API
@@ -139,6 +141,25 @@ func (client *tcpClient) getHostID() string {
 	return id
 }
 
+func bindSocketToDevice(iface string) func(network, address string, c syscall.RawConn) error {
+	if iface == "" {
+		return nil
+	}
+
+	return func(network, address string, c syscall.RawConn) error {
+		var operr error = nil
+
+		fn := func(s uintptr) {
+			operr = syscall.BindToDevice(int(s), iface)
+		}
+
+		if err := c.Control(fn); err != nil {
+			return err
+		}
+		return operr
+	}
+}
+
 // Run starts accepting tcp connections on NVMe server
 func (client *tcpClient) Discover(discoverRequest *DiscoverRequest) ([]*NvmeDiscPageEntry, error) {
 	client.log.Debugf("enter discover")
@@ -149,7 +170,7 @@ func (client *tcpClient) Discover(discoverRequest *DiscoverRequest) ([]*NvmeDisc
 	}
 
 	addr := net.JoinHostPort(client.remoteAddress, strconv.Itoa(discoverRequest.Trsvcid))
-	dialer := net.Dialer{Timeout: client.keepAlivePeriod}
+	dialer := net.Dialer{Control: bindSocketToDevice(discoverRequest.HostIface), Timeout: client.keepAlivePeriod}
 	conn, err := dialer.Dial("tcp", addr)
 	if err != nil {
 		return nil, err

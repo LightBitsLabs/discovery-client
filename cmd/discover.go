@@ -48,6 +48,9 @@ func newDiscoverCmd() *cobra.Command {
 	cmd.Flags().StringP("host-traddr", "w", "", "host-traddr")
 	viper.BindPFlag("discover.host-traddr", cmd.Flags().Lookup("host-traddr"))
 
+	cmd.Flags().StringP("host-iface", "f", "", "host-iface")
+	viper.BindPFlag("discover.host-iface", cmd.Flags().Lookup("host-iface"))
+
 	cmd.Flags().BoolP("persistant", "p", false, "persistant")
 	viper.BindPFlag("discover.persistant", cmd.Flags().Lookup("persistant"))
 
@@ -71,6 +74,7 @@ func discoverCmdFunc(cmd *cobra.Command, args []string) error {
 		Kato:      katoValue,
 		Hostnqn:   viper.GetString("discover.hostnqn"),
 		Transport: viper.GetString("discover.transport"),
+		HostIface: viper.GetString("discover.host-iface"),
 	}
 
 	hostAPI := nvmehost.NewHostApi(true, "/etc/nvme/hostid")

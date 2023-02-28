@@ -34,11 +34,11 @@ import (
 )
 
 var (
-	addressRegex = regexp.MustCompile(`^traddr=(?P<traddr>[^,]+),trsvcid=(?P<trsvcid>\d+)$`)
+	addressRegex = regexp.MustCompile(`^traddr=(?P<traddr>[^,]+),trsvcid=(?P<trsvcid>\d+),host_traddr=(?P<host_traddr>\d+),host_iface=(?P<host_iface>\d+)$`)
 	NvmeCtrlPath = filepath.Join("/sys/class/nvme", "nvme[0-9]")
 )
 
-func CreateEntries(addresses []string, hostnqn string, nqn string, transport string) ([]*commonstructs.Entry, error) {
+func CreateEntries(addresses []string, hostnqn string, nqn string, transport string, host_iface string) ([]*commonstructs.Entry, error) {
 	var entries []*commonstructs.Entry
 	for _, address := range addresses {
 		host, port, err := net.SplitHostPort(address)
@@ -61,6 +61,7 @@ func CreateEntries(addresses []string, hostnqn string, nqn string, transport str
 			Trsvcid:   int(port_str),
 			Hostnqn:   hostnqn,
 			Nqn:       nqn,
+			HostIface: host_iface,
 		}
 		entries = append(entries, e)
 	}
@@ -155,13 +156,13 @@ func DetectEntriesByIOControllers(nvmeCtrlPath string, discoveryServicePort uint
 			log.WithField("error", err).Warn("failed to read address")
 			continue
 		}
-		traddr, _, err := parseAddress(address)
+		traddr, _, _, host_iface, err := parseAddress(address)
 		if err != nil {
 			log.WithField("error", err).Warnf("failed to parse address")
 			continue
 		}
 		endpoint := fmt.Sprintf("%s:%d", traddr, discoveryServicePort)
-		entries, err := CreateEntries([]string{endpoint}, hostNqn, subsysNqn, transport)
+		entries, err := CreateEntries([]string{endpoint}, hostNqn, subsysNqn, transport, host_iface)
 		if err != nil {
 			log.WithField("error", err).Warnf("failed to create entries")
 			continue
@@ -171,17 +172,27 @@ func DetectEntriesByIOControllers(nvmeCtrlPath string, discoveryServicePort uint
 	return allEntries, nil
 }
 
-func parseAddress(address string) (string, string, error) {
+func parseAddress(address string) (string, string, string, string, error) {
 	params := regexutil.GetParams(addressRegex, address)
 	traddr, ok := params["traddr"]
 	if !ok {
-		return "", "", fmt.Errorf("failed extracting traddr from address: %q", address)
+		return "", "", "", "", fmt.Errorf("failed extracting traddr from address: %q", address)
 	}
 	trsvcid, ok := params["trsvcid"]
 	if !ok {
-		return "", "", fmt.Errorf("failed extracting trsvcid from address: %q", address)
+		return "", "", "", "", fmt.Errorf("failed extracting trsvcid from address: %q", address)
 	}
-	return traddr, trsvcid, nil
+	host_traddr, ok := params["host_traddr"]
+	if !ok {
+		// if doesn't exist, no problem
+		host_traddr = ""
+	}
+	host_iface, ok := params["host_iface"]
+	if !ok {
+		// if doesn't exist, no problem
+		host_iface = ""
+	}
+	return traddr, trsvcid, host_traddr, host_iface, nil
 }
 
 func valueFromFile(filename string) (string, error) {

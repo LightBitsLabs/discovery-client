@@ -181,6 +181,7 @@ func createDiscoveryRequest(discoveryRequest *hostapi.DiscoverRequest) *Discover
 		Hostnqn:   discoveryRequest.Hostnqn,
 		Hostaddr:  discoveryRequest.Hostaddr,
 		Kato:      discoveryRequest.Kato,
+		HostIface: discoveryRequest.HostIface,
 	}
 }
 

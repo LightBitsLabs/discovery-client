@@ -40,6 +40,7 @@ type Entry struct {
 	Subsysnqn  string
 	Persistent bool
 	Hostaddr   string
+	HostIface  string
 }
 
 func (e *Entry) compare(other *Entry) bool {
@@ -158,6 +159,9 @@ func parse(filename string) ([]*Entry, error) {
 			case "-n", "--subsysnqn":
 				i++
 				e.Subsysnqn = strings.TrimSpace(s[i])
+			case "-f", "--host-iface":
+				i++
+				e.HostIface = strings.TrimSpace(s[i])
 			case "-p", "--persistent":
 				e.Persistent = true
 			default:

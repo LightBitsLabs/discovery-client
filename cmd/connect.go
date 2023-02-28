@@ -49,6 +49,9 @@ specified by the --nqn option.`,
 	cmd.Flags().StringP("host-traddr", "w", "", "host-traddr")
 	viper.BindPFlag("connect.host-traddr", cmd.Flags().Lookup("host-traddr"))
 
+	cmd.Flags().StringP("host-iface", "f", "", "host-iface")
+	viper.BindPFlag("connect.host-iface", cmd.Flags().Lookup("host-iface"))
+
 	cmd.Flags().StringP("nqn", "n", "", "nqn")
 	viper.BindPFlag("connect.nqn", cmd.Flags().Lookup("nqn"))
 
@@ -73,6 +76,7 @@ func connectCmdFunc(cmd *cobra.Command, args []string) error {
 		Hostnqn:     viper.GetString("connect.hostnqn"),
 		Transport:   viper.GetString("connect.transport"),
 		CtrlLossTMO: viper.GetInt("connect.ctrl-loss-tmo"),
+		HostIface:   viper.GetString("connect.host-iface"),
 	}
 	ctrlID, err := nvmeclient.Connect(request)
 	if err != nil {

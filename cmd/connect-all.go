@@ -48,6 +48,9 @@ func newConnectAllCmd() *cobra.Command {
 	cmd.Flags().StringP("host-traddr", "w", "", "host-traddr")
 	viper.BindPFlag("connect-all.host-traddr", cmd.Flags().Lookup("host-traddr"))
 
+	cmd.Flags().StringP("host-iface", "f", "", "host-iface")
+	viper.BindPFlag("connect-all.host-iface", cmd.Flags().Lookup("host-iface"))
+
 	cmd.Flags().BoolP("persistant", "p", false, "persistant")
 	viper.BindPFlag("connect-all.persistant", cmd.Flags().Lookup("persistant"))
 
@@ -68,6 +71,7 @@ func connectAllCmdFunc(cmd *cobra.Command, args []string) error {
 		Kato:      kato,
 		Hostnqn:   viper.GetString("connect-all.hostnqn"),
 		Transport: viper.GetString("connect-all.transport"),
+		HostIface: viper.GetString("connect-all.host-iface"),
 	}
 	ctrls, err := nvmeclient.ConnectAll(entry, viper.GetInt("connect-all.max-queues"))
 	if err != nil {

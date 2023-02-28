@@ -25,10 +25,15 @@ type Entry struct {
 	Trsvcid   int
 	Hostnqn   string
 	Nqn       string
+	HostIface string
 }
 
 func (entry *Entry) String() string {
-	return fmt.Sprintf("-t %s -a %s -s %d -q %s -n %s\n", entry.Transport, entry.Traddr, entry.Trsvcid, entry.Hostnqn, entry.Nqn)
+	host_iface := ""
+	if len(entry.HostIface) > 0 {
+		host_iface = fmt.Sprintf("-f %s", entry.HostIface)
+	}
+	return fmt.Sprintf("-t %s -a %s -s %d -q %s -n %s %s\n", entry.Transport, entry.Traddr, entry.Trsvcid, entry.Hostnqn, entry.Nqn, host_iface)
 }
 
 func EntriesToString(entries []*Entry) string {

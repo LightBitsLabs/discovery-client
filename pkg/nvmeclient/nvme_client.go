@@ -103,6 +103,7 @@ type ConnectRequest struct {
 	Subsysnqn   string
 	CtrlLossTMO int
 	MaxIOQueues int
+	HostIface   string
 }
 
 // ToOptions returns a comma delimited key=value string
@@ -124,6 +125,9 @@ func (c *ConnectRequest) ToOptions() string {
 	}
 	if len(c.Hostaddr) > 0 {
 		sb.WriteString(fmt.Sprintf(",host_traddr=%s", c.Hostaddr))
+	}
+	if len(c.HostIface) > 0 {
+		sb.WriteString(fmt.Sprintf(",host_iface=%s", c.HostIface))
 	}
 	if c.CtrlLossTMO >= -1 {
 		sb.WriteString(fmt.Sprintf(",ctrl_loss_tmo=%d", c.CtrlLossTMO))
@@ -491,11 +495,11 @@ func ConnectAll(discoveryRequest *hostapi.DiscoverRequest, maxIOQueues int) ([]*
 	if err != nil {
 		return nil, err
 	}
-	ctrls := ConnectAllNVMEDevices(logPageEntries, discoveryRequest.Hostnqn, discoveryRequest.Transport, maxIOQueues)
+	ctrls := ConnectAllNVMEDevices(logPageEntries, discoveryRequest.Hostnqn, discoveryRequest.Transport, maxIOQueues, discoveryRequest.HostIface)
 	return ctrls, nil
 }
 
-func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn string, transport string, maxIOQueues int) []*CtrlIdentifier {
+func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn string, transport string, maxIOQueues int, host_iface string) []*CtrlIdentifier {
 	var ctrls []*CtrlIdentifier
 	for _, logPageEntry := range logPageEntries {
 		// skip the non IO subsystems.
@@ -510,6 +514,7 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn 
 			Transport:   transport,
 			CtrlLossTMO: -1,
 			MaxIOQueues: maxIOQueues,
+			HostIface: host_iface,
 		}
 		ctrlID, err := Connect(request)
 		if err != nil {

@@ -42,6 +42,7 @@ func newAddHostNqnCmd() *cobra.Command {
 	cmd.Flags().StringP("hostnqn", "q", "", "host nqn")
 	cmd.Flags().StringP("nqn", "n", "", "subsystem nqn")
 	cmd.Flags().StringP("transport", "t", "tcp", "transport name - default to tcp")
+	cmd.Flags().StringP("host-iface", "f", "", "host iface to use")
 
 	return cmd
 }
@@ -81,8 +82,9 @@ func addHostNqnCmdFunc(cmd *cobra.Command, args []string) error {
 	nqn, err := cmd.Flags().GetString("nqn")
 	transport, err := cmd.Flags().GetString("transport")
 	addresses, err := cmd.Flags().GetStringSlice("addresses")
+	host_iface, err := cmd.Flags().GetString("host-iface")
 
-	entries, err := clientconfig.CreateEntries(addresses, hostnqn, nqn, transport)
+	entries, err := clientconfig.CreateEntries(addresses, hostnqn, nqn, transport, host_iface)
 	if err != nil {
 		return err
 	}
