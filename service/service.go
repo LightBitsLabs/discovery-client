@@ -261,7 +261,7 @@ func (s *service) Start() error {
 							Hostnqn:  conn.Hostnqn}
 						refMap[refKey] = referral
 					}
-					s.cache.HandleReferrals(refMap)
+					s.cache.HandleReferrals(refMap, request)
 				}
 			case <-s.ctx.Done():
 				s.log.Infof("exiting the main func ctx done")

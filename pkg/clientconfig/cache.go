@@ -50,6 +50,7 @@ type TKey struct {
 	// subsystem nqn
 	Nqn     string
 	hostnqn string
+	hostIface string
 }
 
 type Connection struct {
@@ -87,6 +88,7 @@ func (c *Connection) GetDiscoveryRequest(kato time.Duration) *hostapi.DiscoverRe
 		Hostnqn:   c.Hostnqn,
 		Kato:      kato,
 		AENChan:   c.AENChan,
+		HostIface: c.Key.hostIface,
 	}
 }
 
@@ -176,7 +178,7 @@ type Cache interface {
 	// Clear clears the entries we have till now
 	Clear()
 	Connections() <-chan ConnectionMap
-	HandleReferrals(referrals ReferralMap) error
+	HandleReferrals(referrals ReferralMap, request *hostapi.DiscoverRequest) error
 }
 
 type cache struct {
@@ -485,7 +487,7 @@ func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
 	c.log.Debugf("added cache entry %+v. Cache has now %d entries", newEntry, len(c.cacheEntries))
 	metrics.Metrics.EntriesTotal.WithLabelValues().Inc()
 
-	key := TKey{transport: newEntry.Transport, Ip: newEntry.Traddr, port: newEntry.Trsvcid, Nqn: newEntry.Subsysnqn, hostnqn: newEntry.Hostnqn}
+	key := TKey{transport: newEntry.Transport, Ip: newEntry.Traddr, port: newEntry.Trsvcid, Nqn: newEntry.Subsysnqn, hostnqn: newEntry.Hostnqn, hostIface: newEntry.HostIface}
 	pair := ClientClusterPair{
 		ClusterNqn: newEntry.Subsysnqn,
 		HostNqn:    newEntry.Hostnqn,
@@ -504,7 +506,7 @@ func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
 	return ClientClusterPair{}, err
 }
 
-func (c *cache) HandleReferrals(referrals ReferralMap) error {
+func (c *cache) HandleReferrals(referrals ReferralMap, request *hostapi.DiscoverRequest) error {
 	if len(referrals) == 0 {
 		err := fmt.Errorf("Handle referrals got empty referrals map. This should never happen")
 		c.log.WithError(err)
@@ -514,11 +516,11 @@ func (c *cache) HandleReferrals(referrals ReferralMap) error {
 	for key := range referrals {
 		c.log.Debugf("%s:%d", key.Ip, key.Port)
 	}
-	newConnectionsPairs, err := c.addConnectionsFromReferrals(referrals)
+	newConnectionsPairs, err := c.addConnectionsFromReferrals(referrals, request)
 	if err != nil {
 		c.log.WithError(err).Errorf("Failed to add new connections from referrals")
 	}
-	removedConnectionsPairs, err := c.removeConnectionsNotInReferrals(referrals)
+	removedConnectionsPairs, err := c.removeConnectionsNotInReferrals(referrals, request)
 	if err != nil {
 		c.log.WithError(err).Errorf("Failed to remove connections following referrals")
 	}
@@ -534,14 +536,14 @@ func (c *cache) HandleReferrals(referrals ReferralMap) error {
 	return err
 }
 
-func (c *cache) addConnectionsFromReferrals(referrals ReferralMap) (newConnectionsPairs []ClientClusterPair, err error) {
+func (c *cache) addConnectionsFromReferrals(referrals ReferralMap, request *hostapi.DiscoverRequest) (newConnectionsPairs []ClientClusterPair, err error) {
 	pairs := []ClientClusterPair{}
 	if len(referrals) == 0 {
 		return pairs, nil
 	}
 	c.log.Debugf("Checking if new entries are required from referrals")
 	for refKey, referral := range referrals {
-		newEntry := getEntryFromReferral(refKey, referral)
+		newEntry := getEntryFromReferral(refKey, referral, request)
 		pair, err := c.addEntry(newEntry)
 		if err != nil {
 			c.log.WithError(err).Errorf("Failed to add entry %v", newEntry)
@@ -556,13 +558,13 @@ func (c *cache) addConnectionsFromReferrals(referrals ReferralMap) (newConnectio
 	return pairs, nil
 }
 
-func (c *cache) removeConnectionsNotInReferrals(referrals ReferralMap) (removedConnectionsPairs []ClientClusterPair, err error) {
+func (c *cache) removeConnectionsNotInReferrals(referrals ReferralMap, request *hostapi.DiscoverRequest) (removedConnectionsPairs []ClientClusterPair, err error) {
 	pairs := []ClientClusterPair{}
 	c.log.Debugf("Checking if entries removal is needed due to referrals")
 	referralEntries := []*Entry{}
 	var prevPair, currentPair ClientClusterPair
 	for refKey, referral := range referrals {
-		referralEntries = append(referralEntries, getEntryFromReferral(refKey, referral))
+		referralEntries = append(referralEntries, getEntryFromReferral(refKey, referral, request))
 		currentPair = ClientClusterPair{
 			ClusterNqn: refKey.DPSubNqn,
 			HostNqn:    refKey.Hostnqn,
@@ -597,7 +599,7 @@ func (c *cache) removeConnectionsNotInReferrals(referrals ReferralMap) (removedC
 	return pairs, nil
 }
 
-func getEntryFromReferral(refKey ReferralKey, referral *hostapi.NvmeDiscPageEntry) *Entry {
+func getEntryFromReferral(refKey ReferralKey, referral *hostapi.NvmeDiscPageEntry, request *hostapi.DiscoverRequest) *Entry {
 	return &Entry{
 		Transport:  "tcp",
 		Trsvcid:    int(referral.TrsvcID),
@@ -605,6 +607,7 @@ func getEntryFromReferral(refKey ReferralKey, referral *hostapi.NvmeDiscPageEntr
 		Hostnqn:    refKey.Hostnqn,
 		Subsysnqn:  refKey.DPSubNqn,
 		Persistent: true,
+		HostIface:  request.HostIface,
 	}
 }
 
