@@ -51,7 +51,7 @@ type AppConfig struct {
 	MaxIOQueues              int               `yaml:"maxIOQueues"`
 	AutoDetectEntries        AutoDetectEntries `yaml:"autoDetectEntries,omitempty"`
 	NvmeHostIDPath           string            `yaml:"nvmeHostIDPath,omitempty"`
-	HostIface                string            `yaml:"hostIface,omitempty"`
+	DefaultHostIface         string            `yaml:"defaultHostIface,omitempty"`
 }
 
 func (cfg *AppConfig) verifyConfigurationIsValid() error {

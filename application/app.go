@@ -77,7 +77,7 @@ func (app *App) Start() error {
 	}
 	app.cache = clientconfig.NewCache(app.ctx, app.cfg.ClientConfigDir, app.cfg.InternalDir, &app.cfg.AutoDetectEntries)
 	hostAPI := nvmehost.NewHostApi(app.cfg.LogPagePaginationEnabled, app.cfg.NvmeHostIDPath)
-	app.svc = service.NewService(app.ctx, app.cache, hostAPI, app.cfg.ReconnectInterval, app.cfg.MaxIOQueues)
+	app.svc = service.NewService(app.ctx, app.cache, hostAPI, app.cfg.ReconnectInterval, app.cfg.MaxIOQueues, app.cfg.DefaultHostIface)
 	if err := app.svc.Start(); err != nil {
 		return err
 	}

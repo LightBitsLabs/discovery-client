@@ -55,15 +55,17 @@ type service struct {
 	wg                *sync.WaitGroup
 	reconnectInterval time.Duration
 	maxIOQueues       int
+	defaultHostIface  string
 }
 
-func NewService(ctx context.Context, cache clientconfig.Cache, hostAPI hostapi.HostAPI, reconnectInterval time.Duration, maxIOQueues int) Service {
+func NewService(ctx context.Context, cache clientconfig.Cache, hostAPI hostapi.HostAPI, reconnectInterval time.Duration, maxIOQueues int, defaultHostIface string) Service {
 	s := &service{
 		log:               logrus.WithFields(logrus.Fields{}),
 		cache:             cache,
 		hostAPI:           hostAPI,
 		reconnectInterval: reconnectInterval,
 		maxIOQueues:       maxIOQueues,
+		defaultHostIface:  defaultHostIface,
 	}
 	var wg sync.WaitGroup
 	s.wg = &wg
@@ -90,6 +92,9 @@ func (s *service) Discover(req *hostapi.DiscoverRequest) ([]*hostapi.NvmeDiscPag
 
 func (s *service) getLogPageEntries(conn *clientconfig.Connection, kato time.Duration) ([]*hostapi.NvmeDiscPageEntry, []*hostapi.NvmeDiscPageEntry, *hostapi.DiscoverRequest, error) {
 	request := conn.GetDiscoveryRequest(kato)
+	if request.HostIface == "" {
+		request.HostIface = s.defaultHostIface
+	}
 	logPageEntries, id, err := s.Discover(request)
 	//In case the connection is persistent keep the connection id
 	if kato > 0 && err == nil {

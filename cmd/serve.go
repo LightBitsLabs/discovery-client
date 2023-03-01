@@ -79,6 +79,9 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().Int("maxIOQueues", 0, "Overrides the default number of I/O queues create by the driver. Zero value means no override (default driver value is number of cores).")
 	viper.BindPFlag("maxIOQueues", cmd.Flags().Lookup("maxIOQueues"))
 
+	cmd.Flags().String("defaultHostIface", "", "default interface the discovery client and nvme driver will bind to when connecting to nvme endpoints")
+	viper.BindPFlag("defaultHostIface", cmd.Flags().Lookup("defaultHostIface"))
+
 	// auto detect configuration
 	cmd.Flags().BoolP("autoDetectEntries.enabled", "e", true, "should we detect")
 	viper.BindPFlag("autoDetectEntries.enabled", cmd.Flags().Lookup("autoDetectEntries.enabled"))
