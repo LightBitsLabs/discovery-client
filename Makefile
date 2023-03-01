@@ -62,6 +62,7 @@ build:
 build/discovery-client: GO_FILES=$(shell find discovery-client pkg -name '*.go')
 build/discovery-client: build $(GO_FILES)
 	$(GO_VARS) go build -o ./build/discovery-client $(DISCOVERY_CLIENT_PKG)
+	sudo setcap cap_net_raw+ep ./build/discovery-client
 
 clean:
 	$(Q) rm -f build/discovery-client
