@@ -14,6 +14,7 @@
       - [Functionality](#service-functionality)
     - [Override Config Using Environment Variables](#override-config-using-environment-variables)
     - [discovery-client Information Auto-Detection](#discovery-client-information-auto-detection)
+  - [Pre-built Packages](#prebuilt-packages)
   - [License, Warranty, Support, and Contact Information](#license-warranty-support-contact)
 
 
@@ -274,6 +275,37 @@ Once it will reach at least one discovery service it will receive referral infor
 ## Authors
 
 The `discovery-client` was written by Yogev Cohen and the rest of the Lightbits Labs development team and is copyrighted by Lightbits Labs.
+
+## Pre-built Packages
+
+To install the latest pre-built `.deb` package:
+```bash
+apt-get install -y debian-keyring  # debian only
+apt-get install -y debian-archive-keyring  # debian only
+apt-get install -y apt-transport-https
+# If using Debian Jessie, Ubuntu 15.10 and earlier
+keyring_location=/etc/apt/trusted.gpg.d/lightbits-discovery-client.gpg
+# If using Debian Stretch, Ubuntu 16.04 and later
+keyring_location=/usr/share/keyrings/lightbits-discovery-client-archive-keyring.gpg
+curl -1sLf 'https://dl.lightbitslabs.com/public/discovery-client/gpg.014E5C7FAFD89AEE.key' |  gpg --dearmor > ${keyring_location}
+distro=ubuntu # change as appropriate for your distro
+codename=xenial # change as appropriate for your release
+curl -1sLf "https://dl.lightbitslabs.com/public/discovery-client/config.deb.txt?distro=${distro}&codename=${codename}" > /etc/apt/sources.list.d/lightbits-discovery-client.list
+apt-get update
+apt-get install discovery-client
+```
+
+To install the latest pre-built `.rpm` package:
+```bash
+yum install yum-utils pygpgme
+rpm --import 'https://dl.lightbitslabs.com/public/discovery-client/gpg.014E5C7FAFD89AEE.key'
+distro=el # change as appropriate for your distro
+codename=7 # change as appropriate for your release
+curl -1sLf "https://dl.lightbitslabs.com/public/discovery-client/config.rpm.txt?distro=${distro}&codename=${codename}" > /tmp/lightbits-discovery-client.repo
+yum-config-manager --add-repo '/tmp/lightbits-discovery-client.repo'
+yum -q makecache -y --disablerepo='*' --enablerepo='lightbits-discovery-client'
+yum install discovery-client
+```
 
 ## License, Warranty, Support, and Contact Information
 
