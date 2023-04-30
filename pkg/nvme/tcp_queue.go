@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 
 	"github.com/lightbitslabs/discovery-client/pkg/metrics"
 	"github.com/lunixbochs/struc"
@@ -227,6 +228,17 @@ func (queue *tcpQueue) sendDataPdu(nvmeRequest Request) error {
 	}
 
 	return nil
+}
+
+func needsDataOut(request Request) bool {
+	val := !request.isWrite() && request.dataLen() > 0 &&
+		request.Completion().Status == C.NVME_SC_SUCCESS
+	logrus.Debugf("needsDataOut: %t, is writable: %t, dataLen: %d, response status: %#02x. request type: %s, command ID: %#04x",
+		val, request.isWrite(),
+		request.dataLen(),
+		request.Completion().Status,
+		reflect.TypeOf(request).String(), request.CommandID())
+	return val
 }
 
 func (queue *tcpQueue) pollResponseChannel() {
