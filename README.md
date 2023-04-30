@@ -14,8 +14,8 @@
       - [Functionality](#service-functionality)
     - [Override Config Using Environment Variables](#override-config-using-environment-variables)
     - [discovery-client Information Auto-Detection](#discovery-client-information-auto-detection)
-  - [Pre-built Packages](#prebuilt-packages)
-  - [License, Warranty, Support, and Contact Information](#license-warranty-support-contact)
+  - [Pre-built Packages](#pre-built-packages)
+  - [License, Warranty, Support, and Contact Information](#license-warranty-support-and-contact-information)
 
 
 The `discovery-client` is a deployable service running under
