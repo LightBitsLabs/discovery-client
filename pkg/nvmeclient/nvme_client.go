@@ -491,11 +491,11 @@ func ConnectAll(discoveryRequest *hostapi.DiscoverRequest, maxIOQueues int) ([]*
 	if err != nil {
 		return nil, err
 	}
-	ctrls := ConnectAllNVMEDevices(logPageEntries, discoveryRequest.Hostnqn, discoveryRequest.Transport, maxIOQueues)
-	return ctrls, nil
+	ctrls, err := ConnectAllNVMEDevices(logPageEntries, discoveryRequest.Hostnqn, discoveryRequest.Transport, maxIOQueues)
+	return ctrls, err
 }
 
-func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn string, transport string, maxIOQueues int) []*CtrlIdentifier {
+func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn string, transport string, maxIOQueues int) ([]*CtrlIdentifier, error) {
 	var ctrls []*CtrlIdentifier
 	for _, logPageEntry := range logPageEntries {
 		// skip the non IO subsystems.
@@ -526,13 +526,14 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn 
 					// we can't deduce that if the DS is down on that node we will fail to connect cause there might be a network partition
 					// on the discovery-service or the DS is down on that node but the IO controller is still accessible.
 					logrus.WithError(perr).Warnf("failed to connect IO controller. In case we have a node down, discovery provides log-page with it's connect info. we will probably fail to connect to it.")
+					return nil, perr
 				}
 			}
 			continue
 		}
 		ctrls = append(ctrls, ctrlID)
 	}
-	return ctrls
+	return ctrls, nil
 }
 
 func Discover(discoveryRequest *hostapi.DiscoverRequest) ([]*hostapi.NvmeDiscPageEntry, error) {
