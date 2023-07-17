@@ -47,6 +47,7 @@ PKG=$(shell go list)
 DISCOVERY_CLIENT_PKG=github.com/lightbitslabs/discovery-client
 
 DSC_IMG := $(DOCKER_REGISTRY)$(DOCKER_TAG)
+RPMOUT_DIR := $(WORKSPACE_TOP)/discovery-client/build/dist
 
 override GO_VARS := GO111MODULE=on CGO_ENABLED=1 GOOS=linux GOFLAGS=-mod=vendor
 
@@ -70,11 +71,11 @@ clean:
 discovery-rpms: VERSION = $(or $(LIGHTOS_VERSION),$(DEFAULT_REL))
 discovery-rpms: build/dist build/discovery-client
 	$(Q) rm -rf build/dist/*
-	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="_builddir `pwd`" --define="dist $(DISCOVERY_CLIENT_RELEASE)~$(MANIFEST_HASH_VERSION)" discovery-client.spec
-	cp -f ${HOME}/rpmbuild/RPMS/x86_64/discovery-*.rpm build/dist/
+	$(Q) rm -rf ${RPMOUT_DIR}
+	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="_builddir `pwd`" --define="dist $(DISCOVERY_CLIENT_RELEASE)~$(MANIFEST_HASH_VERSION)" --define "_rpmdir $(RPMOUT_DIR)" discovery-client.spec
 
 discovery-client-debs: discovery-rpms
-	(cd build/dist && sudo alien --to-deb -v -k ${WORKSPACE_TOP}/discovery-client/build/dist/discovery-client*.rpm && sudo chown ${USER}:${USER} ${WORKSPACE_TOP}/discovery-client/build/dist/*.deb)
+	(cd build/dist && sudo alien --to-deb -v -k ${RPMOUT_DIR}/x86_64/discovery-client*.rpm && sudo chown ${USER}:${USER} ${WORKSPACE_TOP}/discovery-client/build/dist/*.deb)
 
 discovery-packages: discovery-rpms discovery-client-debs
 
@@ -82,7 +83,7 @@ install-discovery-client-packages: COMPONENT_PATH = $(shell component-tool local
 install-discovery-client-packages:
 	$(Q)mkdir -p $(COMPONENT_PATH)/
 	$(Q)rm -rf $(COMPONENT_PATH)/*
-	$(Q)cp ${HOME}/rpmbuild/RPMS/x86_64/discovery-client*.rpm $(COMPONENT_PATH)/
+	$(Q)cp ${RPMOUT_DIR}/x86_64/discovery-client*.rpm $(COMPONENT_PATH)/
 	$(Q)cp build/dist/discovery-client*.deb $(COMPONENT_PATH)/
 	echo "Installed discovery-client RPMs and DEBs"
 
