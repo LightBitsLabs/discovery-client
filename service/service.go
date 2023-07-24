@@ -251,16 +251,7 @@ func (s *service) Start() error {
 						}()
 						continue
 					}
-					_, err = nvmeclient.ConnectAllNVMEDevices(nvmeLogPageEntries, request.Hostnqn, request.Transport, s.maxIOQueues)
-					if err != nil {
-						s.log.WithError(err).Errorf("failed to connect all nvme devices")
-						conn.SetState(false)
-						go func() {
-							triggerReconnectToClusterCh <- clusterMapId
-						}()
-						continue
-					}
-
+					nvmeclient.ConnectAllNVMEDevices(nvmeLogPageEntries, request.Hostnqn, request.Transport, s.maxIOQueues)
 					refMap := clientconfig.ReferralMap{}
 					for _, referral := range discLogPageEntries {
 						refKey := clientconfig.ReferralKey{
