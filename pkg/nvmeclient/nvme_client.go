@@ -24,8 +24,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unsafe"
 
+	"github.com/avast/retry-go"
 	"github.com/lightbitslabs/discovery-client/metrics"
 	"github.com/lightbitslabs/discovery-client/pkg/hostapi"
 	"github.com/lightbitslabs/discovery-client/pkg/ioctl"
@@ -495,6 +497,24 @@ func ConnectAll(discoveryRequest *hostapi.DiscoverRequest, maxIOQueues int) ([]*
 	return ctrls, nil
 }
 
+func connectNVMEDevicesWithRetry(request *ConnectRequest) (*CtrlIdentifier, error) {
+	var err error
+	var ctrlID *CtrlIdentifier
+
+	logrus.Debug("try to reconnect nvme-devices")
+
+	retry.Do(func() error {
+		ctrlID, err = Connect(request)
+		if err == nil {
+			return nil
+		}
+
+		return err
+	}, retry.DelayType(retry.BackOffDelay), retry.Attempts(5), retry.Delay(time.Millisecond*10))
+
+	return ctrlID, err
+}
+
 func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn string, transport string, maxIOQueues int) []*CtrlIdentifier {
 	var ctrls []*CtrlIdentifier
 	for _, logPageEntry := range logPageEntries {
@@ -521,11 +541,15 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn 
 				if perr.Status == CONN_ALREADY_CONNECTED {
 					continue
 				} else {
-					// This warn will occur every 5 sec in case the node is down.
-					// discovery service will still report this controller to connect to but we will fail to connect.
-					// we can't deduce that if the DS is down on that node we will fail to connect cause there might be a network partition
-					// on the discovery-service or the DS is down on that node but the IO controller is still accessible.
-					logrus.WithError(perr).Warnf("failed to connect IO controller. In case we have a node down, discovery provides log-page with it's connect info. we will probably fail to connect to it.")
+					ctrlID, err = connectNVMEDevicesWithRetry(request)
+					if errors.As(err, &perr) {
+						// This warn will occur every 5 sec in case the node is down.
+						// discovery service will still report this controller to connect to but we will fail to connect.
+						// we can't deduce that if the DS is down on that node we will fail to connect cause there might be a network partition
+						// on the discovery-service or the DS is down on that node but the IO controller is still accessible.
+						logrus.WithError(perr).Warnf("failed to connect IO controller. This may be a transient error or due to a node being down.",
+							"Continuing to attempt connection until the discovery-service stops providing the down node's address..")
+					}
 				}
 			}
 			continue
