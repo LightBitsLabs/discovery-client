@@ -3,6 +3,7 @@ module github.com/lightbitslabs/discovery-client
 go 1.17
 
 require (
+	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/google/uuid v1.3.0
