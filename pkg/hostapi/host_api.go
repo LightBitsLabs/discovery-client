@@ -35,6 +35,7 @@ type DiscoverRequest struct {
 	Hostaddr  string
 	Kato      time.Duration //keep alive timeout. 0 value signifies request for non persistant connection
 	AENChan   chan AENStruct
+	Hostid    string
 }
 
 // NvmeDiscPageEntry struct represent discovery log page that will be returned from discover method
@@ -81,6 +82,9 @@ func (c *DiscoverRequest) ToOptions() string {
 	}
 	if c.Kato > 0 {
 		sb.WriteString(fmt.Sprintf(",keep_alive_tmo=%d", c.Kato))
+	}
+	if len(c.Hostid) > 0 {
+		sb.WriteString(fmt.Sprintf(",hostid=%s", c.Hostid))
 	}
 	return sb.String()
 }
