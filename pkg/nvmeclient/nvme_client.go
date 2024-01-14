@@ -28,6 +28,7 @@ import (
 	"unsafe"
 
 	"github.com/avast/retry-go"
+	"github.com/google/uuid"
 	"github.com/lightbitslabs/discovery-client/metrics"
 	"github.com/lightbitslabs/discovery-client/pkg/hostapi"
 	"github.com/lightbitslabs/discovery-client/pkg/ioctl"
@@ -105,6 +106,7 @@ type ConnectRequest struct {
 	Subsysnqn   string
 	CtrlLossTMO int
 	MaxIOQueues int
+	Hostid      string
 }
 
 // ToOptions returns a comma delimited key=value string
@@ -132,6 +134,9 @@ func (c *ConnectRequest) ToOptions() string {
 	}
 	if c.MaxIOQueues > 0 {
 		sb.WriteString(fmt.Sprintf(",nr_io_queues=%d", c.MaxIOQueues))
+	}
+	if len(c.Hostid) > 0 {
+		sb.WriteString(fmt.Sprintf(",hostid=%s", c.Hostid))
 	}
 	return sb.String()
 }
@@ -466,6 +471,7 @@ func Connect(request *ConnectRequest) (*CtrlIdentifier, error) {
 		}
 	}
 	request.Traddr = traddr
+	request.Hostid = uuid.NewMD5(uuid.Nil, []byte(request.Hostnqn)).String()
 
 	ctrlID, err := addCtrl(request.ToOptions())
 	if err != nil {
@@ -569,6 +575,7 @@ func Discover(discoveryRequest *hostapi.DiscoverRequest) ([]*hostapi.NvmeDiscPag
 		}
 	}
 	discoveryRequest.Traddr = traddr
+	discoveryRequest.Hostid = uuid.NewMD5(uuid.Nil, []byte(discoveryRequest.Hostnqn)).String()
 
 	ctrlID, err := addCtrl(discoveryRequest.ToOptions())
 	if err != nil {
