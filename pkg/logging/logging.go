@@ -16,7 +16,7 @@ package logging
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"path"
 	"runtime"
@@ -121,7 +121,7 @@ func SetupLogging(cfg Config) error {
 		}
 	}
 
-	logrus.SetOutput(ioutil.Discard)
+	logrus.SetOutput(io.Discard)
 	disableTimeStamp := true
 	setupConsoleLogs(disableTimeStamp)
 	setupLoggingFile(cfg, wantedLevel)
@@ -139,7 +139,7 @@ func SetupLoggingWithConsoleTimeStamp(cfg Config) error {
 		}
 	}
 
-	logrus.SetOutput(ioutil.Discard)
+	logrus.SetOutput(io.Discard)
 	disableTimeStamp := false
 	setupConsoleLogs(disableTimeStamp)
 	setupLoggingFile(cfg, wantedLevel)

@@ -1,6 +1,6 @@
 module github.com/lightbitslabs/discovery-client
 
-go 1.17
+go 1.22
 
 require (
 	github.com/avast/retry-go v3.0.0+incompatible

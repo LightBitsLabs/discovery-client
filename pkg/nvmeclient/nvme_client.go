@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"regexp"
@@ -142,7 +141,7 @@ func (c *ConnectRequest) ToOptions() string {
 }
 
 func listNvmeControllers() ([]string, error) {
-	entries, err := ioutil.ReadDir(SysNvme)
+	entries, err := os.ReadDir(SysNvme)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +151,11 @@ func listNvmeControllers() ([]string, error) {
 		if entry.IsDir() {
 			continue
 		}
-		if entry.Mode()&os.ModeSymlink == 0 {
+		fsinfo, err := entry.Info()
+		if err != nil {
+			return nil, err
+		}
+		if fsinfo.Mode()&os.ModeSymlink == 0 {
 			continue
 		}
 		controllers = append(controllers, entry.Name())
@@ -165,19 +168,19 @@ func getNvmeControllerInfo(ctrlName string) (*NvmeControllerInfo, error) {
 
 	ctrlPath := path.Join(SysNvme, ctrlName)
 
-	subsysnqn, err := ioutil.ReadFile(path.Join(ctrlPath, "subsysnqn"))
+	subsysnqn, err := os.ReadFile(path.Join(ctrlPath, "subsysnqn"))
 	if err != nil {
 		return nil, err
 	}
 	info.Subsysnqn = strings.TrimSpace(string(subsysnqn))
 
-	transport, err := ioutil.ReadFile(path.Join(ctrlPath, "transport"))
+	transport, err := os.ReadFile(path.Join(ctrlPath, "transport"))
 	if err != nil {
 		return nil, err
 	}
 	info.Transport = strings.TrimSpace(string(transport))
 
-	address, err := ioutil.ReadFile(path.Join(ctrlPath, "address"))
+	address, err := os.ReadFile(path.Join(ctrlPath, "address"))
 	if err != nil {
 		return nil, err
 	}

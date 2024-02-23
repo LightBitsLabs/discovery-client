@@ -17,7 +17,6 @@ package nvmehost
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -119,7 +118,7 @@ func (client *tcpClient) AENChan() <-chan interface{} {
 func (client *tcpClient) getHostID() string {
 	// if host-id file doesn't exist generate it.
 	var id string
-	dat, err := ioutil.ReadFile(client.nvmeHostIDPath)
+	dat, err := os.ReadFile(client.nvmeHostIDPath)
 	if err != nil || string(dat) == "" {
 		id := uuid.New().String() + "\n"
 		client.log.Debugf("creating hostID file at %v", client.nvmeHostIDPath)
@@ -128,7 +127,7 @@ func (client *tcpClient) getHostID() string {
 			client.log.WithError(err).Errorf("failed to create %s folder", filepath.Dir(client.nvmeHostIDPath))
 			panic(err)
 		}
-		err = ioutil.WriteFile(client.nvmeHostIDPath, []byte(id), 0644)
+		err = os.WriteFile(client.nvmeHostIDPath, []byte(id), 0644)
 		if err != nil {
 			client.log.WithError(err).Errorf("failed to write to %s file", client.nvmeHostIDPath)
 			panic(err)
