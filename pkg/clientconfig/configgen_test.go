@@ -28,7 +28,7 @@ import (
 )
 
 func createFileTree(t *testing.T, userConf bool, userConfFiles int, internalConf bool, internalConfFiles int) string {
-	dir, err := ioutil.TempDir("", "prefix")
+	dir, err := os.MkdirTemp("", "prefix")
 	require.NoError(t, err, "failed creating temp dir")
 	if userConf {
 		userConfDirName := path.Join(dir, "discovery.d")
@@ -36,7 +36,7 @@ func createFileTree(t *testing.T, userConf bool, userConfFiles int, internalConf
 		for i := 0; i < userConfFiles; i++ {
 			data := []byte("-t tcp -a 1.1.1.1 -s 8009 -q bla -n bla")
 			filename := path.Join(userConfDirName, fmt.Sprintf("%d", i))
-			require.NoError(t, ioutil.WriteFile(filename, data, os.ModePerm), "failed")
+			require.NoError(t, os.WriteFile(filename, data, os.ModePerm), "failed")
 		}
 	}
 	if internalConf {
@@ -45,7 +45,7 @@ func createFileTree(t *testing.T, userConf bool, userConfFiles int, internalConf
 		for i := 0; i < internalConfFiles; i++ {
 			data := []byte("{}")
 			filename := path.Join(internalConfDirName, fmt.Sprintf("%d", i))
-			require.NoError(t, ioutil.WriteFile(filename, data, os.ModePerm), "failed")
+			require.NoError(t, os.WriteFile(filename, data, os.ModePerm), "failed")
 		}
 	}
 	return dir
@@ -75,7 +75,7 @@ func inc(ip net.IP) {
 }
 
 func createSysClassNvmeFileTree(t *testing.T, subsysnqn, hostnqn, transport, cidr string, port int, controllers int) string {
-	dir, err := ioutil.TempDir("", "prefix")
+	dir, err := os.MkdirTemp("", "prefix")
 	require.NoError(t, err, "failed creating temp dir")
 	hosts, err := getHostsInCIDR(cidr)
 	if err != nil {
@@ -85,16 +85,16 @@ func createSysClassNvmeFileTree(t *testing.T, subsysnqn, hostnqn, transport, cid
 		nvmeCtrlPath := path.Join(dir, fmt.Sprintf("nvme%d", i))
 		require.NoError(t, os.MkdirAll(nvmeCtrlPath, os.ModePerm), "failed")
 		if len(subsysnqn) > 0 {
-			require.NoError(t, ioutil.WriteFile(path.Join(nvmeCtrlPath, "subsysnqn"), []byte(subsysnqn), os.ModePerm), "failed")
+			require.NoError(t, os.WriteFile(path.Join(nvmeCtrlPath, "subsysnqn"), []byte(subsysnqn), os.ModePerm), "failed")
 		}
 		if len(hostnqn) > 0 {
-			require.NoError(t, ioutil.WriteFile(path.Join(nvmeCtrlPath, "hostnqn"), []byte(hostnqn), os.ModePerm), "failed")
+			require.NoError(t, os.WriteFile(path.Join(nvmeCtrlPath, "hostnqn"), []byte(hostnqn), os.ModePerm), "failed")
 		}
 		if len(transport) > 0 {
-			require.NoError(t, ioutil.WriteFile(path.Join(nvmeCtrlPath, "transport"), []byte(transport), os.ModePerm), "failed")
+			require.NoError(t, os.WriteFile(path.Join(nvmeCtrlPath, "transport"), []byte(transport), os.ModePerm), "failed")
 		}
 		if hosts != nil {
-			require.NoError(t, ioutil.WriteFile(path.Join(nvmeCtrlPath, "address"), []byte(fmt.Sprintf("traddr=%s,trsvcid=%d", hosts[i], port)), os.ModePerm), "failed")
+			require.NoError(t, os.WriteFile(path.Join(nvmeCtrlPath, "address"), []byte(fmt.Sprintf("traddr=%s,trsvcid=%d", hosts[i], port)), os.ModePerm), "failed")
 		}
 	}
 	return dir

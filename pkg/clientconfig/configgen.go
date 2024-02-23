@@ -17,7 +17,6 @@ package clientconfig
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"path"
@@ -28,8 +27,8 @@ import (
 
 	"github.com/lightbitslabs/discovery-client/model"
 	"github.com/lightbitslabs/discovery-client/pkg/commonstructs"
-	"github.com/lightbitslabs/discovery-client/pkg/regexutil"
 	"github.com/lightbitslabs/discovery-client/pkg/nvme"
+	"github.com/lightbitslabs/discovery-client/pkg/regexutil"
 	"github.com/sirupsen/logrus"
 )
 
@@ -70,7 +69,7 @@ func CreateEntries(addresses []string, hostnqn string, nqn string, transport str
 func CreateFile(filename string, entries []*commonstructs.Entry) error {
 	folder := path.Dir(filename)
 	content := []byte(commonstructs.EntriesToString(entries))
-	tmpfile, err := ioutil.TempFile(folder, model.DiscoveryClientReservedPrefix)
+	tmpfile, err := os.CreateTemp(folder, model.DiscoveryClientReservedPrefix)
 	if err != nil {
 		return err
 	}

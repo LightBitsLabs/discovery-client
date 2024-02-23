@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path"
@@ -223,7 +222,7 @@ func (c *cache) createReferralsFile() error {
 		return err
 	}
 
-	tmpfile, err := ioutil.TempFile(c.internalDirPath, "tmp_internal.json")
+	tmpfile, err := os.CreateTemp(c.internalDirPath, "tmp_internal.json")
 	if err != nil {
 		c.log.WithError(err).Errorf("Failed to create temp file")
 		return err
@@ -261,7 +260,7 @@ func (c *cache) useInternalJson() (use bool, entries []Entry, err error) {
 		c.log.Errorf("%s is a directory, expected a json file", jsonPath)
 		return false, existingEntries, nil
 	}
-	content, _ := ioutil.ReadFile(jsonPath)
+	content, _ := os.ReadFile(jsonPath)
 	if len(content) == 0 {
 		c.log.Errorf("%s is unexpectedly an empty file", jsonPath)
 		return false, existingEntries, nil
@@ -316,7 +315,7 @@ func (c *cache) sync() error {
 			}
 		}
 	} else {
-		userFiles, err := ioutil.ReadDir(c.userDirPath)
+		userFiles, err := os.ReadDir(c.userDirPath)
 		if err != nil {
 			return err
 		}
