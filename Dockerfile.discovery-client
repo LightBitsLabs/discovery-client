@@ -43,7 +43,7 @@ WORKDIR /go/src/github.com/lightbitslabs/discovery-client
 RUN make build/discovery-client
 
 
-FROM alpine:3.19
+FROM alpine:3.19 AS discovery-client
 
 LABEL maintainers="Lightbits Labs" \
       description="NVMeTCP Discovery Client Service" \
@@ -55,6 +55,67 @@ LABEL maintainers="Lightbits Labs" \
 
 RUN apk update && \
     apk add --no-cache \
+    util-linux
+
+RUN mkdir -p /etc/{discovery-client,nvme}
+COPY --from=builder /go/src/github.com/lightbitslabs/discovery-client/etc/discovery-client/discovery-client.yaml /etc/discovery-client/
+
+COPY --from=builder /go/src/github.com/lightbitslabs/discovery-client/build/discovery-client /discovery-client
+
+ENTRYPOINT ["/discovery-client"]
+CMD ["serve"]
+
+
+
+ARG BASE_SHA "8.6"
+FROM registry.access.redhat.com/ubi8/ubi-minimal:8.6 AS discovery-client-ubi
+#FROM registry.access.redhat.com/ubi8/ubi-minimal:${BASE_SHA} AS discovery-client-ubi
+
+# leave unset to use the default value at the top of the file
+ARG BASE_SHA
+
+ARG VERSION=""
+ARG DATE=""
+ARG REVISION=""
+
+# OCI labels: https://github.com/opencontainers/image-spec/blob/main/annotations.md
+LABEL org.opencontainers.image.base.digest="${BASE_SHA}" \
+      org.opencontainers.image.created="${DATE}" \
+      org.opencontainers.image.authors="dev@lightbitslabs.com" \
+      org.opencontainers.image.url="docker.lightbitslabs.com/lightos-csi/lb-nvme-discovery-client" \
+      org.opencontainers.image.documentation="https://github.com/lightbitslabs/discovery-client" \
+      org.opencontainers.image.source="https://github.com/lightbitslabs/discovery-client" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.vendor="Lightbits Labs" \
+      org.opencontainers.image.licenses="Apache License, Version 2.0" \
+      org.opencontainers.image.title="Lightbits CSI Operator" \
+      org.opencontainers.image.description="Discovery Client for NVMe-TCP"
+
+# OpenShift labels: https://docs.openshift.com/container-platform/4.10/openshift_images/create-images.html#defining-image-metadata
+LABEL io.openshift.tags="nvme-tcp,storage" \
+      io.k8s.description="Discovery Client for NVMe-TCP" \
+      io.openshift.non-scalable="false" \
+      io.openshift.min-memory="1024Mi" \
+      io.openshift.min-cpu="1"
+
+LABEL name="discovery-client" \
+      vendor="Lightbits Labs" \
+      maintainer="dev@lightbitslabs.com" \
+      version="${VERSION}" \
+      summary="Discovery Client for NVMe-TCP" \
+      description="Discovery Client for NVMe-TCP"
+
+# copy the licenses folder
+RUN mkdir -p /licenses
+COPY LICENSE /licenses
+
+RUN microdnf update -y && rm -rf /var/cache/yum
+ADD deploy/almalinux.repo /etc/yum.repos.d/
+RUN mkdir -p /etc/pki/rpm-gpg/
+ADD deploy/RPM-GPG-KEY-AlmaLinux /etc/pki/rpm-gpg/
+
+RUN microdnf install \
     util-linux
 
 RUN mkdir -p /etc/{discovery-client,nvme}
