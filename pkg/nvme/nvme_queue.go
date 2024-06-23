@@ -138,7 +138,6 @@ func (queue *nvmeQueue) nvmetRequestInit(transport nvmetTransport, pdu []byte) (
 	}
 
 	request.setTransport(transport)
-	queue = queue
 	return request, nil
 }
 
