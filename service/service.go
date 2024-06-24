@@ -22,11 +22,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/lightbitslabs/discovery-client/pkg/clientconfig"
 	"github.com/lightbitslabs/discovery-client/pkg/hostapi"
 	"github.com/lightbitslabs/discovery-client/pkg/nvme"
 	"github.com/lightbitslabs/discovery-client/pkg/nvmeclient"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -182,6 +183,7 @@ func (s *service) Start() error {
 				// first - close any running scheduler for reconnect
 				if stopCh != nil {
 					close(stopCh)
+					stopCh = nil
 				}
 				err := s.reconnectToCluster(clusterMapId)
 				if err != nil {
