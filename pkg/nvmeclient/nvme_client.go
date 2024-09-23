@@ -556,7 +556,7 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn 
 						// discovery service will still report this controller to connect to but we will fail to connect.
 						// we can't deduce that if the DS is down on that node we will fail to connect cause there might be a network partition
 						// on the discovery-service or the DS is down on that node but the IO controller is still accessible.
-						logrus.WithError(perr).Warnf("failed to connect IO controller. This may be a transient error or due to a node being down.",
+						logrus.WithError(perr).Warn("failed to connect IO controller. This may be a transient error or due to a node being down.",
 							"Continuing to attempt connection until the discovery-service stops providing the down node's address..")
 					}
 				}
