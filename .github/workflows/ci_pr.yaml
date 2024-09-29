@@ -1,0 +1,72 @@
+name: Discovery Client PR checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_name:
+        description: "Manifest name to run the PR checks with"
+        default: "duros.xml"
+        required: true
+        type: string
+      manifest_branch:
+        description: "Manifest branch to run the PR checks with"
+        default: "master"
+        required: true
+        type: string
+      ci_token:
+        description: "Token to use for CI"
+        required: true
+        type: string
+
+env:
+  BUILD_TYPE: "rel"
+  manifest_name: "duros.xml"
+  system_tests_type: "discovery-client"
+  max_parallel: 3
+
+jobs:
+  populate_env_vars:
+    runs-on: ubuntu-latest
+    name: populate_env_vars
+    outputs:
+      manifest_name: ${{ steps.set_manifest_name.outputs.manifest_name }}
+      system_tests_type: ${{ steps.set_system_tests_type.outputs.system_tests_type }}
+      max_parallel: ${{ steps.set_max_parallel.outputs.max_parallel }}
+    steps:
+      - id: set_manifest_name
+        name: set_manifest_name
+        run: |
+          manifest_name=${{ inputs.manifest_name }}
+          if [ ${manifest_name} ]; then
+            echo "manifest_name=$manifest_name" >> $GITHUB_OUTPUT
+          else
+            echo "manifest_name=${{ env.manifest_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - id: set_system_tests_type
+        name: set_system_tests_type
+        run: |
+          system_tests_type=${{ env.system_tests_type }}
+          echo "system_tests_type=$system_tests_type" >> $GITHUB_OUTPUT
+
+      - id: set_max_parallel
+        name: set_max_parallel
+        run: |
+          echo "max_parallel=${{ env.max_parallel }}" >> $GITHUB_OUTPUT
+
+  trigger_ci_pr:
+    needs: populate_env_vars
+    name: "Trigger CI PR workflow"
+    runs-on: ubuntu-latest
+    steps:
+      - name:  Trigger CI PR workflow
+        uses: convictional/trigger-workflow-and-wait@v1.6.5
+        with:
+          owner: lightbitslabs
+          repo: lbcitests
+          github_token: ${{ inputs.CI_TOKEN }}
+          workflow_file_name: ci_pr.yaml
+          ref: main
+          client_payload: '{"manifest_name":"${{ needs.populate_env_vars.outputs.manifest_name }}", "tests_type":"${{ needs.populate_env_vars.outputs.system_tests_type }}", "manifest_branch":"${{ inputs.manifest_branch }}", "github_runner_label":"pr-checks", "run_name":"Discovery Client PR checks"}'
+          trigger_workflow: true
+          wait_workflow: true
