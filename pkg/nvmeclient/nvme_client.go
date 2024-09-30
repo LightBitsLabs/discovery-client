@@ -548,6 +548,7 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn 
 			var perr *NvmeClientError
 			if errors.As(err, &perr) {
 				if perr.Status == CONN_ALREADY_CONNECTED {
+					logrus.Debugf("connection to %s is already established", request.Traddr)
 					continue
 				} else {
 					ctrlID, err = connectNVMEDevicesWithRetry(request)
@@ -566,6 +567,7 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn 
 				continue
 			}
 		}
+		logrus.Debugf("Successfully connected to: %s", request.Traddr)
 		ctrls = append(ctrls, ctrlID)
 	}
 	return ctrls
