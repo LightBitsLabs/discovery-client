@@ -1,0 +1,97 @@
+name: Discovery Client PR checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_name:
+        description: "Manifest name to run the PR checks with"
+        default: "duros.xml"
+        required: true
+        type: string
+
+
+  pull_request:
+    branches: [main]
+    types:
+      - labeled
+      - unlabeled
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+env:
+  BUILD_TYPE: "rel"
+  manifest_name: "duros.xml"
+  system_tests_type: "system-test"
+  max_parallel: ${{ vars.MAX_PARALLEL_VM }}
+
+jobs:
+  check_pr_labels:
+    env:
+      github_repo: ""
+      pr_number: ""
+    runs-on: [ self-hosted, pr-checks ]
+    steps:
+      - name: Get PR details
+        id: pr_details
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "This workflow was triggered by a PR."
+            echo "github_repo=${{ github.event.repository.name }}"
+            echo "github_repo=${{ github.event.repository.name }}" >> $GITHUB_ENV
+            echo "pr_number=${{ github.event.number }}"
+            echo "pr_number=${{ github.event.number }}" >> $GITHUB_ENV
+          else
+            echo "This workflow was not triggered by a PR."
+          fi
+      - name: Check PR labels
+        if: github.event_name == 'pull_request'
+        uses: LightBitsLabs/lbcitests/.github/actions/check-pr-labels@main
+        with:
+          github_repo: ${{ env.github_repo }}
+          pr_number: ${{ env.pr_number }}
+          github_token: ${{ secrets.ci_token }}
+
+  populate_env_vars:
+    runs-on: [ self-hosted, pr-checks ]
+    needs: check_pr_labels
+    name: populate_env_vars
+    outputs:
+      manifest_name: ${{ steps.set_manifest_name.outputs.manifest_name }}
+      system_tests_type: ${{ steps.set_system_tests_type.outputs.system_tests_type }}
+      max_parallel: ${{ steps.set_max_parallel.outputs.max_parallel }}
+    steps:
+      - id: set_manifest_name
+        name: set_manifest_name
+        run: |
+          manifest_name=${{ inputs.manifest_name }}
+          if [ ${manifest_name} ]; then
+            echo "manifest_name=$manifest_name" >> $GITHUB_OUTPUT
+          else
+            echo "manifest_name=${{ env.manifest_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - id: set_system_tests_type
+        name: set_system_tests_type
+        run: |
+          system_tests_type=${{ env.system_tests_type }}
+          echo "system_tests_type=$system_tests_type" >> $GITHUB_OUTPUT
+
+      - id: set_max_parallel
+        name: set_max_parallel
+        run: |
+          echo "max_parallel=${{ env.max_parallel }}" >> $GITHUB_OUTPUT
+
+  run_system_tests:
+    needs: populate_env_vars
+    name: "Run system tests"
+    uses: LightBitsLabs/lbcitests/.github/workflows/ci-base.yaml@main
+    with:
+      manifest_name: ${{ needs.populate_env_vars.outputs.manifest_name }}
+      manifest_branch: ${{ inputs.manifest_branch }}
+      github_runner_label: pr-checks
+      tests_type: ${{ needs.populate_env_vars.outputs.system_tests_type }}
+      run_on_virt_allocator: "true"
+      max_parallel: ${{ needs.populate_env_vars.outputs.max_parallel }}
+    secrets: inherit

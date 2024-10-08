@@ -1,0 +1,8 @@
+tests:
+  - extra_parameters: ''
+    test_name: 239_alma_8_vm_installation_test
+    test_path: systests/racktests/239_alma_8_vm_installation_test.py
+  - extra_parameters: ''
+    test_name: 529_discovery_vm_installation_add_node
+    test_path: systests/racktests/529_discovery_vm_installation_add_node.py
+
