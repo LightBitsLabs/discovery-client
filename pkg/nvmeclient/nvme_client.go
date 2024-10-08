@@ -548,6 +548,7 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn 
 			var perr *NvmeClientError
 			if errors.As(err, &perr) {
 				if perr.Status == CONN_ALREADY_CONNECTED {
+					logrus.Debugf("connection to %s is already established", request.Traddr)
 					continue
 				} else {
 					ctrlID, err = connectNVMEDevicesWithRetry(request)
@@ -558,11 +559,15 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn 
 						// on the discovery-service or the DS is down on that node but the IO controller is still accessible.
 						logrus.WithError(perr).Warn("failed to connect IO controller. This may be a transient error or due to a node being down.",
 							"Continuing to attempt connection until the discovery-service stops providing the down node's address..")
+						continue
 					}
 				}
+			} else {
+				logrus.WithError(err).Errorf("failed to connect to: %s", request.Traddr)
+				continue
 			}
-			continue
 		}
+		logrus.Debugf("Successfully connected to: %s", request.Traddr)
 		ctrls = append(ctrls, ctrlID)
 	}
 	return ctrls
