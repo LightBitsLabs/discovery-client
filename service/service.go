@@ -56,15 +56,17 @@ type service struct {
 	wg                *sync.WaitGroup
 	reconnectInterval time.Duration
 	maxIOQueues       int
+	kato 			  int
 }
 
-func NewService(ctx context.Context, cache clientconfig.Cache, hostAPI hostapi.HostAPI, reconnectInterval time.Duration, maxIOQueues int) Service {
+func NewService(ctx context.Context, cache clientconfig.Cache, hostAPI hostapi.HostAPI, reconnectInterval time.Duration, maxIOQueues int, kato int) Service {
 	s := &service{
 		log:               logrus.WithFields(logrus.Fields{}),
 		cache:             cache,
 		hostAPI:           hostAPI,
 		reconnectInterval: reconnectInterval,
 		maxIOQueues:       maxIOQueues,
+		kato:              kato,
 	}
 	var wg sync.WaitGroup
 	s.wg = &wg
@@ -253,7 +255,7 @@ func (s *service) Start() error {
 						}()
 						continue
 					}
-					nvmeclient.ConnectAllNVMEDevices(nvmeLogPageEntries, request.Hostnqn, request.Transport, s.maxIOQueues)
+					nvmeclient.ConnectAllNVMEDevices(nvmeLogPageEntries, request.Hostnqn, request.Transport, s.maxIOQueues, s.kato)
 					refMap := clientconfig.ReferralMap{}
 					for _, referral := range discLogPageEntries {
 						refKey := clientconfig.ReferralKey{
