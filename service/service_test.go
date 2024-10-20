@@ -166,7 +166,7 @@ func TestConnectionsExistAtServiceStart(t *testing.T) {
 	filePath := filepath.Join(userDir, fileName)
 	testutils.CreateFile(t, filePath, fileContent)
 	hostAPIMock := NewHostAPIMock()
-	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0)
+	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0, 10)
 	serviceInterface.Start()
 	correctConnections := func() bool {
 		return correctNumberOfClusterConnectionsInCache(t, serviceInterface, clientconfig.ClientClusterPair{firstSubsysNQN, hostnqn}, numEndpoints)
@@ -218,7 +218,7 @@ func TestConnectionsDualCluster(t *testing.T) {
 				fileIndex += 1
 			}
 			hostAPIMock := NewHostAPIMock()
-			serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0)
+			serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0, 10)
 			serviceInterface.Start()
 			for _, subsysNqn := range tc.clustersAddedAfterServiceStart {
 				fileContent := genFileContent(numEndpointsPerCluster, subsysNqn)
@@ -257,7 +257,7 @@ func TestConnectionsCreatedBeforeAndAfterServeiceStart(t *testing.T) {
 	fileContent := genFileContent(initialNumEndpoints, firstSubsysNQN)
 	filePath := filepath.Join(userDir, fileName)
 	hostAPIMock := NewHostAPIMock()
-	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0)
+	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0, 10)
 	testutils.CreateFile(t, filePath, fileContent)
 	serviceInterface.Start()
 	correctConnections := func() bool {
@@ -321,7 +321,7 @@ func TestConnectionAENNotification(t *testing.T) {
 	fileContent := genFileContent(numEndpoints, firstSubsysNQN)
 	filePath := filepath.Join(userDir, fileName)
 	hostAPIMock := NewHostAPIMock()
-	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0)
+	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0, 10)
 	serviceInterface.Start()
 	testutils.CreateFile(t, filePath, fileContent)
 	correctConnections := func() bool {
@@ -378,7 +378,7 @@ func TestDiscoveryNoLogPageEntries(t *testing.T) {
 	fileContent := genFileContent(numEndpoints, firstSubsysNQN)
 	filePath := filepath.Join(userDir, fileName)
 	hostAPIMock := NewHostAPIMock()
-	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0)
+	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0, 10)
 	serviceInterface.Start()
 	testutils.CreateFile(t, filePath, fileContent)
 	correctConnections := func() bool {
@@ -412,7 +412,7 @@ func TestFailedConnection(t *testing.T) {
 	fileContent := genFileContent(numEndpoints, firstSubsysNQN)
 	filePath := filepath.Join(userDir, fileName)
 	hostAPIMock := NewHostAPIMock()
-	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0)
+	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0, 10)
 	serviceInterface.Start()
 	testutils.CreateFile(t, filePath, fileContent)
 	correctConnections := func() bool {
@@ -442,7 +442,7 @@ func TestConnectionsAddedThroughReferrals(t *testing.T) {
 	fileContent := genFileContent(fileNumEndpoints, firstSubsysNQN)
 	filePath := filepath.Join(userDir, fileName)
 	hostAPIMock := NewHostAPIMock()
-	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0)
+	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0, 10)
 	testutils.CreateFile(t, filePath, fileContent)
 	serviceInterface.Start()
 	correctConnections := func() bool {
@@ -454,7 +454,7 @@ func TestConnectionsAddedThroughReferrals(t *testing.T) {
 	newCtx, newCancel := context.WithCancel(context.Background())
 	defer newCancel()
 	newCache := clientconfig.NewCache(newCtx, userDir, internalDir, nil)
-	newServiceInterface := NewService(newCtx, newCache, hostAPIMock, reconnectInterval, 0)
+	newServiceInterface := NewService(newCtx, newCache, hostAPIMock, reconnectInterval, 0, 10)
 	newServiceInterface.Start()
 	correctConnections = func() bool {
 		return correctNumberOfClusterConnectionsInCache(t, newServiceInterface, clientconfig.ClientClusterPair{firstSubsysNQN, hostnqn}, referralNumEndpoints)
@@ -484,7 +484,7 @@ func TestConnectionsAtStartNotFromJson(t *testing.T) {
 	fileContent := genFileContent(numEndpoints, firstSubsysNQN)
 	filePath := filepath.Join(userDir, fileName)
 	hostAPIMock := NewHostAPIMock()
-	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0)
+	serviceInterface := NewService(ctx, cache, hostAPIMock, reconnectInterval, 0, 10)
 	testutils.CreateFile(t, filePath, fileContent)
 	serviceInterface.Start()
 	correctConnections := func() bool {
@@ -506,7 +506,7 @@ func TestConnectionsAtStartNotFromJson(t *testing.T) {
 	newCtx, newCancel := context.WithCancel(context.Background())
 	defer newCancel()
 	newCache := clientconfig.NewCache(newCtx, userDir, internalDir, nil)
-	newServiceInterface := NewService(newCtx, newCache, hostAPIMock, reconnectInterval, 0)
+	newServiceInterface := NewService(newCtx, newCache, hostAPIMock, reconnectInterval, 0, 10)
 	newServiceInterface.Start()
 	correctConnections = func() bool {
 		return correctNumberOfClusterConnectionsInCache(t, newServiceInterface, clientconfig.ClientClusterPair{firstSubsysNQN, hostnqn}, numEndpoints)

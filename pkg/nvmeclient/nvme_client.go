@@ -106,6 +106,7 @@ type ConnectRequest struct {
 	CtrlLossTMO int
 	MaxIOQueues int
 	Hostid      string
+	Kato        int
 }
 
 // ToOptions returns a comma delimited key=value string
@@ -136,6 +137,9 @@ func (c *ConnectRequest) ToOptions() string {
 	}
 	if len(c.Hostid) > 0 {
 		sb.WriteString(fmt.Sprintf(",hostid=%s", c.Hostid))
+	}
+	if c.Kato > 0 {
+		sb.WriteString(fmt.Sprintf(",keep_alive_tmo=%d", c.Kato))
 	}
 	return sb.String()
 }
@@ -497,12 +501,12 @@ func Connect(request *ConnectRequest) (*CtrlIdentifier, error) {
 	return ctrlID, nil
 }
 
-func ConnectAll(discoveryRequest *hostapi.DiscoverRequest, maxIOQueues int) ([]*CtrlIdentifier, error) {
+func ConnectAll(discoveryRequest *hostapi.DiscoverRequest, maxIOQueues int, kato int) ([]*CtrlIdentifier, error) {
 	logPageEntries, err := Discover(discoveryRequest)
 	if err != nil {
 		return nil, err
 	}
-	ctrls := ConnectAllNVMEDevices(logPageEntries, discoveryRequest.Hostnqn, discoveryRequest.Transport, maxIOQueues)
+	ctrls := ConnectAllNVMEDevices(logPageEntries, discoveryRequest.Hostnqn, discoveryRequest.Transport, maxIOQueues, kato)
 	return ctrls, nil
 }
 
@@ -524,7 +528,7 @@ func connectNVMEDevicesWithRetry(request *ConnectRequest) (*CtrlIdentifier, erro
 	return ctrlID, err
 }
 
-func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn string, transport string, maxIOQueues int) []*CtrlIdentifier {
+func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn string, transport string, maxIOQueues int, kato int) []*CtrlIdentifier {
 	var ctrls []*CtrlIdentifier
 	for _, logPageEntry := range logPageEntries {
 		// skip the non IO subsystems.
@@ -539,6 +543,7 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn 
 			Transport:   transport,
 			CtrlLossTMO: -1,
 			MaxIOQueues: maxIOQueues,
+			Kato:        kato,
 		}
 		ctrlID, err := Connect(request)
 		if err != nil {

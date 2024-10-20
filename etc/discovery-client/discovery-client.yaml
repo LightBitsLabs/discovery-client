@@ -4,6 +4,7 @@ internalDir: /etc/discovery-client/internal/
 reconnectInterval: 5s
 logPagePaginationEnabled: false
 maxIOQueues: 0
+kato: 20
 nvmeHostIDPath: /tmp/discovery-client/hostid
 logging:
   filename: "/var/log/discovery-client.log"
