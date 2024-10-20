@@ -54,6 +54,9 @@ func newConnectAllCmd() *cobra.Command {
 	cmd.Flags().IntP("max-queues", "m", 0, "max-queues")
 	viper.BindPFlag("connect-all.max-queues", cmd.Flags().Lookup("max-queues"))
 
+	cmd.Flags().IntP("kato", "k", 0, "kato")
+	viper.BindPFlag("connect-all.kato", cmd.Flags().Lookup("kato"))
+
 	return cmd
 }
 
@@ -69,7 +72,7 @@ func connectAllCmdFunc(cmd *cobra.Command, args []string) error {
 		Hostnqn:   viper.GetString("connect-all.hostnqn"),
 		Transport: viper.GetString("connect-all.transport"),
 	}
-	ctrls, err := nvmeclient.ConnectAll(entry, viper.GetInt("connect-all.max-queues"))
+	ctrls, err := nvmeclient.ConnectAll(entry, viper.GetInt("connect-all.max-queues"), viper.GetInt("connect-all.kato"))
 	if err != nil {
 		return err
 	}

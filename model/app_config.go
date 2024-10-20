@@ -51,6 +51,7 @@ type AppConfig struct {
 	MaxIOQueues              int               `yaml:"maxIOQueues"`
 	AutoDetectEntries        AutoDetectEntries `yaml:"autoDetectEntries,omitempty"`
 	NvmeHostIDPath           string            `yaml:"nvmeHostIDPath,omitempty"`
+	Kato					 int 			   `yaml:"kato"`
 }
 
 func (cfg *AppConfig) verifyConfigurationIsValid() error {
