@@ -8,6 +8,11 @@ on:
         default: "duros.xml"
         required: true
         type: string
+      manifest_branch:
+        description: "Manifest branch to run the PR checks with"
+        default: "master"
+        required: true
+        type: string
 
 
   pull_request:
@@ -83,18 +88,19 @@ jobs:
         run: |
           echo "max_parallel=${{ env.max_parallel }}" >> $GITHUB_OUTPUT
 
-  run_system_tests:
+  trigger_ci_pr:
     needs: populate_env_vars
-    name: "Run system tests"
-    uses: LightBitsLabs/lbcitests/.github/workflows/ci-base.yaml@main
-    with:
-      manifest_name: ${{ needs.populate_env_vars.outputs.manifest_name }}
-      manifest_branch: ${{ inputs.manifest_branch }}
-      github_runner_label: pr-checks
-      tests_type: ${{ needs.populate_env_vars.outputs.system_tests_type }}
-      run_on_virt_allocator: "true"
-      max_parallel: ${{ needs.populate_env_vars.outputs.max_parallel }}
-    permissions:
-      contents: read
-    secrets:
-      token: ${{ secrets.CI_TOKEN }}
+    name: "Trigger CI PR workflow"
+    runs-on: [ self-hosted, pr-checks ]
+    steps:
+      - name:  Trigger CI PR workflow
+        uses: convictional/trigger-workflow-and-wait@v1.6.5
+        with:
+          owner: lightbitslabs
+          repo: lbcitests
+          github_token: ${{ secrets.CI_TOKEN }}
+          workflow_file_name: ci_pr.yaml
+          ref: main
+          client_payload: '{"manifest_name":"${{ needs.populate_env_vars.outputs.manifest_name }}", "tests_type":"${{ needs.populate_env_vars.outputs.system_tests_type }}", "manifest_branch":"${{ inputs.manifest_branch }}", "github_runner_label":"pr-checks", "run_on_virt_allocator":"true", "max_parallel":"${{ needs.populate_env_vars.outputs.max_parallel }}"}'
+          trigger_workflow: true
+          wait_workflow: true
