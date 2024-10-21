@@ -24,7 +24,7 @@ env:
   BUILD_TYPE: "rel"
   manifest_name: "duros.xml"
   system_tests_type: "system-test"
-  max_parallel: ${{ vars.MAX_PARALLEL_VM }}
+  max_parallel: 3
 
 jobs:
   check_pr_labels:
@@ -51,7 +51,7 @@ jobs:
         with:
           github_repo: ${{ env.github_repo }}
           pr_number: ${{ env.pr_number }}
-          github_token: ${{ secrets.ci_token }}
+          github_token: ${{ secrets.CI_TOKEN }}
 
   populate_env_vars:
     runs-on: [ self-hosted, pr-checks ]
@@ -94,4 +94,7 @@ jobs:
       tests_type: ${{ needs.populate_env_vars.outputs.system_tests_type }}
       run_on_virt_allocator: "true"
       max_parallel: ${{ needs.populate_env_vars.outputs.max_parallel }}
-    secrets: inherit
+    permissions:
+      contents: read
+    secrets:
+      token: ${{ secrets.CI_TOKEN }}
