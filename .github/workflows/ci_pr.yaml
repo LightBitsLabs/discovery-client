@@ -32,32 +32,6 @@ env:
   max_parallel: 3
 
 jobs:
-  check_pr_labels:
-    env:
-      github_repo: ""
-      pr_number: ""
-    runs-on: ubuntu-latest
-    steps:
-      - name: Get PR details
-        id: pr_details
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "This workflow was triggered by a PR."
-            echo "github_repo=${{ github.event.repository.name }}"
-            echo "github_repo=${{ github.event.repository.name }}" >> $GITHUB_ENV
-            echo "pr_number=${{ github.event.number }}"
-            echo "pr_number=${{ github.event.number }}" >> $GITHUB_ENV
-          else
-            echo "This workflow was not triggered by a PR."
-          fi
-      - name: Check PR labels
-        if: github.event_name == 'pull_request'
-        uses: LightBitsLabs/lbcitests/.github/actions/check-pr-labels@main
-        with:
-          github_repo: ${{ env.github_repo }}
-          pr_number: ${{ env.pr_number }}
-          github_token: ${{ secrets.CI_TOKEN }}
-
   populate_env_vars:
     runs-on: ubuntu-latest
     needs: check_pr_labels
