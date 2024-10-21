@@ -34,7 +34,6 @@ env:
 jobs:
   populate_env_vars:
     runs-on: ubuntu-latest
-    needs: check_pr_labels
     name: populate_env_vars
     outputs:
       manifest_name: ${{ steps.set_manifest_name.outputs.manifest_name }}
