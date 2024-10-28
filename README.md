@@ -18,7 +18,7 @@
   - [License, Warranty, Support, and Contact Information](#license-warranty-support-and-contact-information)
 
 
-Test fork
+Testing fork
 
 The `discovery-client` is a deployable service running under
 systemd. It is designed for quick deployment on compute hosts
