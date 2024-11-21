@@ -56,7 +56,7 @@ type service struct {
 	wg                *sync.WaitGroup
 	reconnectInterval time.Duration
 	maxIOQueues       int
-	kato 			  int
+	kato              int
 }
 
 func NewService(ctx context.Context, cache clientconfig.Cache, hostAPI hostapi.HostAPI, reconnectInterval time.Duration, maxIOQueues int, kato int) Service {
@@ -255,7 +255,9 @@ func (s *service) Start() error {
 						}()
 						continue
 					}
-					nvmeclient.ConnectAllNVMEDevices(nvmeLogPageEntries, request.Hostnqn, request.Transport, s.maxIOQueues, s.kato)
+					nvmeclient.ConnectAllNVMEDevices(nvmeLogPageEntries,
+						request.Hostnqn, request.Transport,
+						s.maxIOQueues, s.kato, conn.CtrlLossTMO)
 					refMap := clientconfig.ReferralMap{}
 					for _, referral := range discLogPageEntries {
 						refKey := clientconfig.ReferralKey{
