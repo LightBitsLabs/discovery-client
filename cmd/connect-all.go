@@ -17,10 +17,11 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/lightbitslabs/discovery-client/pkg/hostapi"
-	"github.com/lightbitslabs/discovery-client/pkg/nvmeclient"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/lightbitslabs/discovery-client/pkg/hostapi"
+	"github.com/lightbitslabs/discovery-client/pkg/nvmeclient"
 )
 
 func newConnectAllCmd() *cobra.Command {
@@ -54,6 +55,9 @@ func newConnectAllCmd() *cobra.Command {
 	cmd.Flags().IntP("max-queues", "m", 0, "max-queues")
 	viper.BindPFlag("connect-all.max-queues", cmd.Flags().Lookup("max-queues"))
 
+	cmd.Flags().IntP("ctrl-loss-tmo", "", -1, "controller loss timeout period (in seconds). Timeout is disabled by default (-1)")
+	viper.BindPFlag("connect-all.ctrl-loss-tmo", cmd.Flags().Lookup("ctrl-loss-tmo"))
+
 	cmd.Flags().IntP("kato", "k", 0, "kato")
 	viper.BindPFlag("connect-all.kato", cmd.Flags().Lookup("kato"))
 
@@ -72,7 +76,11 @@ func connectAllCmdFunc(cmd *cobra.Command, args []string) error {
 		Hostnqn:   viper.GetString("connect-all.hostnqn"),
 		Transport: viper.GetString("connect-all.transport"),
 	}
-	ctrls, err := nvmeclient.ConnectAll(entry, viper.GetInt("connect-all.max-queues"), viper.GetInt("connect-all.kato"))
+	ctrlLossTMO := viper.GetInt("connect-all.ctrl-loss-tmo")
+	ctrls, err := nvmeclient.ConnectAll(entry,
+		viper.GetInt("connect-all.max-queues"),
+		viper.GetInt("connect-all.kato"),
+		ctrlLossTMO)
 	if err != nil {
 		return err
 	}

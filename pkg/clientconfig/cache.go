@@ -27,10 +27,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/lightbitslabs/discovery-client/metrics"
 	"github.com/lightbitslabs/discovery-client/model"
 	"github.com/lightbitslabs/discovery-client/pkg/hostapi"
-	"github.com/sirupsen/logrus"
 )
 
 type ReferralKey struct {
@@ -47,8 +48,9 @@ type TKey struct {
 	Ip        string
 	port      int
 	// subsystem nqn
-	Nqn     string
-	hostnqn string
+	Nqn         string
+	hostnqn     string
+	ctrlLossTMO int
 }
 
 type Connection struct {
@@ -60,13 +62,15 @@ type Connection struct {
 	AENChan      chan hostapi.AENStruct
 	ConnectionID hostapi.ConnectionID
 	State        bool
+	CtrlLossTMO  int // seconds
 }
 
-func newConnection(ctx context.Context, key TKey) *Connection {
+func newConnection(ctx context.Context, key TKey, ctrlLossTMO int) *Connection {
 	c := &Connection{
-		Key:     key,
-		log:     logrus.WithFields(logrus.Fields{"traddr": key.Ip, "trsvcid": key.port, "nqn": key.Nqn}),
-		AENChan: make(chan hostapi.AENStruct),
+		Key:         key,
+		log:         logrus.WithFields(logrus.Fields{"traddr": key.Ip, "trsvcid": key.port, "nqn": key.Nqn}),
+		AENChan:     make(chan hostapi.AENStruct),
+		CtrlLossTMO: ctrlLossTMO,
 	}
 	c.Ctx, c.cancel = context.WithCancel(ctx)
 	c.SetState(false)
@@ -484,21 +488,23 @@ func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
 	c.log.Debugf("added cache entry %+v. Cache has now %d entries", newEntry, len(c.cacheEntries))
 	metrics.Metrics.EntriesTotal.WithLabelValues().Inc()
 
-	key := TKey{transport: newEntry.Transport, Ip: newEntry.Traddr, port: newEntry.Trsvcid, Nqn: newEntry.Subsysnqn, hostnqn: newEntry.Hostnqn}
+	key := TKey{transport: newEntry.Transport, Ip: newEntry.Traddr,
+		port: newEntry.Trsvcid, Nqn: newEntry.Subsysnqn,
+		hostnqn: newEntry.Hostnqn, ctrlLossTMO: newEntry.CtrlLossTMO}
 	pair := ClientClusterPair{
 		ClusterNqn: newEntry.Subsysnqn,
 		HostNqn:    newEntry.Hostnqn,
 	}
 	conn, ok := c.connections[pair].ClusterConnectionsMap[key]
 	if !ok {
-		conn = newConnection(c.ctx, key)
+		conn = newConnection(c.ctx, key, newEntry.CtrlLossTMO)
 		conn.Hostnqn = newEntry.Hostnqn
 		c.connections.AddConnection(key, conn)
 		metrics.Metrics.Connections.WithLabelValues(key.transport, key.Ip, strconv.Itoa(key.port), key.Nqn, conn.Hostnqn).Inc()
 		c.log.Debugf("Added %s to cache connections", conn)
 		return pair, nil
 	}
-	err := fmt.Errorf("Entry %+v not cached, though %s is in cache", newEntry, conn)
+	err := fmt.Errorf("Entry %+v not cached, though '%s' is in cache", newEntry, conn)
 	c.log.WithError(err).Error("Mismatch between cache entries and cache connections")
 	return ClientClusterPair{}, err
 }

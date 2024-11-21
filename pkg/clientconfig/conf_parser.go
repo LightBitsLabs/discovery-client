@@ -24,6 +24,7 @@ import (
 	"unicode"
 
 	"github.com/sirupsen/logrus"
+
 	"github.com/lightbitslabs/discovery-client/pkg/nvme"
 )
 
@@ -33,13 +34,14 @@ const (
 )
 
 type Entry struct {
-	Transport  string
-	Trsvcid    int
-	Traddr     string
-	Hostnqn    string
-	Subsysnqn  string
-	Persistent bool
-	Hostaddr   string
+	Transport   string
+	Trsvcid     int
+	Traddr      string
+	Hostnqn     string
+	Subsysnqn   string
+	Persistent  bool
+	Hostaddr    string
+	CtrlLossTMO int // time in seconds
 }
 
 func (e *Entry) compare(other *Entry) bool {
@@ -51,7 +53,8 @@ func (e *Entry) compare(other *Entry) bool {
 		e.Hostnqn == other.Hostnqn &&
 		e.Trsvcid == other.Trsvcid &&
 		e.Transport == other.Transport &&
-		e.Subsysnqn == other.Subsysnqn {
+		e.Subsysnqn == other.Subsysnqn &&
+		e.CtrlLossTMO == other.CtrlLossTMO {
 		return true
 	}
 	return false
@@ -72,6 +75,9 @@ func (e *Entry) verify() error {
 	}
 	if len(e.Hostnqn) == 0 {
 		return fmt.Errorf("Hostnqn is mandatory")
+	}
+	if e.CtrlLossTMO < -1 {
+		return fmt.Errorf("CtrlLossTMO must be >= -1")
 	}
 	return nil
 }
@@ -160,6 +166,18 @@ func parse(filename string) ([]*Entry, error) {
 				e.Subsysnqn = strings.TrimSpace(s[i])
 			case "-p", "--persistent":
 				e.Persistent = true
+			case "-l", "--ctrl-loss-tmo":
+				i++
+				value := strings.TrimSpace(s[i])
+				ctrlLossTMO, err := strconv.ParseInt(value, 10, 32)
+				if err != nil {
+					return nil, &ParserError{
+						Msg:     fmt.Sprintf("bad controller loss timeout value"),
+						Details: fmt.Sprintf("%s is not a valid int", s[i]),
+						Err:     err,
+					}
+				}
+				e.CtrlLossTMO = int(ctrlLossTMO)
 			default:
 				return nil, &ParserError{
 					Msg:     fmt.Sprintf("unknown flag"),
