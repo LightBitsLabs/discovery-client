@@ -574,8 +574,12 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry,
 						// discovery service will still report this controller to connect to but we will fail to connect.
 						// we can't deduce that if the DS is down on that node we will fail to connect cause there might be a network partition
 						// on the discovery-service or the DS is down on that node but the IO controller is still accessible.
-						logrus.WithError(perr).Warn("failed to connect IO controller. This may be a transient error or due to a node being down.",
-							"Continuing to attempt connection until the discovery-service stops providing the down node's address..")
+						if strings.Contains(perr.Error(), "open /dev/nvme-fabrics: no such file or directory") {
+							logrus.WithError(perr).Warn("failed to connect IO controller. You may need to load nvme-tcp kernel module")
+						} else {
+							logrus.WithError(perr).Warn("failed to connect IO controller. This may be a transient error or due to a node being down." +
+								"Continuing to attempt connection until the discovery-service stops providing the down node's address..")
+						}
 						continue
 					}
 				}
