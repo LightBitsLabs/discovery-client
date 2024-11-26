@@ -32,6 +32,7 @@ jobs:
       manifest_name: ${{ steps.set_manifest_name.outputs.manifest_name }}
       system_tests_type: ${{ steps.set_system_tests_type.outputs.system_tests_type }}
       max_parallel: ${{ steps.set_max_parallel.outputs.max_parallel }}
+      branch_name: ${{ steps.set_branch_name.outputs.branch_name }}
     steps:
       - id: set_manifest_name
         name: set_manifest_name
@@ -54,6 +55,16 @@ jobs:
         run: |
           echo "max_parallel=${{ env.max_parallel }}" >> $GITHUB_OUTPUT
 
+      - id: set_branch_name
+        name: set_branch_name
+        run: |
+          if [ -z "${GITHUB_HEAD_REF}" ]; then
+            branch_name=${GITHUB_REF_NAME}
+          else
+            branch_name=${GITHUB_HEAD_REF}
+          fi
+          echo "branch_name=$branch_name" >> $GITHUB_OUTPUT
+
   trigger_ci_pr:
     needs: populate_env_vars
     name: "Trigger CI PR workflow"
@@ -67,6 +78,6 @@ jobs:
           github_token: ${{ inputs.CI_TOKEN }}
           workflow_file_name: ci_pr.yaml
           ref: main
-          client_payload: '{"manifest_name":"${{ needs.populate_env_vars.outputs.manifest_name }}", "tests_type":"${{ needs.populate_env_vars.outputs.system_tests_type }}", "manifest_branch":"${{ inputs.manifest_branch }}", "github_runner_label":"pr-checks", "run_name":"Discovery Client PR checks"}'
+          client_payload: '{"manifest_name":"${{ needs.populate_env_vars.outputs.manifest_name }}", "tests_type":"${{ needs.populate_env_vars.outputs.system_tests_type }}", "manifest_branch":"${{ inputs.manifest_branch }}", "github_runner_label":"pr-checks", "run_name":"Discovery Client PR checks", "branch_name":"${{ needs.populate_env_vars.outputs.branch_name }}"}'
           trigger_workflow: true
           wait_workflow: true
