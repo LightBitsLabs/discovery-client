@@ -15,6 +15,7 @@
     - [Override Config Using Environment Variables](#override-config-using-environment-variables)
     - [discovery-client Information Auto-Detection](#discovery-client-information-auto-detection)
   - [Pre-built Packages](#pre-built-packages)
+  - [PR checks](#pr-checks)
   - [License, Warranty, Support, and Contact Information](#license-warranty-support-and-contact-information)
 
 
@@ -306,6 +307,21 @@ yum-config-manager --add-repo '/tmp/lightbits-discovery-client.repo'
 yum -q makecache -y --disablerepo='*' --enablerepo='lightbits-discovery-client'
 yum install discovery-client
 ```
+
+## PR Checks
+
+### How-to
+
+1. **Non-Lightbits Contributors:**
+   - Fork the repository
+   - Make the change you want
+   - Open a pull request with the public repo (not the fork) as the base
+   - A committer from Lightbits will review the pull request and, if it looks fine, they'll trigger the PR check on the pull request branch
+   - You'll be notified with the results of the PR check once it's done
+2. **Lightbits Contributors:**
+   - Check the following document for more info [here](https://github.com/LightBitsLabs/eng-docs/blob/main/pr-checks/public-repository-pr-checks.md)
+
+By following the steps above, you can ensure that, if the pull request you open is legitimate and up to our standards, that the PR checks run on your pull request.
 
 ## License, Warranty, Support, and Contact Information
 
