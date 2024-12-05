@@ -23,6 +23,7 @@ env:
   manifest_name: "duros.xml"
   system_tests_type: "discovery-client"
   max_parallel: 3
+  manifest_branch: "master"
 
 jobs:
   populate_env_vars:
@@ -33,6 +34,7 @@ jobs:
       system_tests_type: ${{ steps.set_system_tests_type.outputs.system_tests_type }}
       max_parallel: ${{ steps.set_max_parallel.outputs.max_parallel }}
       branch_name: ${{ steps.set_branch_name.outputs.branch_name }}
+      manifest_branch: ${{ steps.set_manifest_branch.outputs.manifest_branch }}
     steps:
       - id: set_manifest_name
         name: set_manifest_name
@@ -65,6 +67,16 @@ jobs:
           fi
           echo "branch_name=$branch_name" >> $GITHUB_OUTPUT
 
+      - id: set_manifest_branch
+        name: set_manifest_branch
+        run: |
+          manifest_name=${{ inputs.manifest_branch }}
+          if [ ${manifest_name} ]; then
+            echo "manifest_branch=${{ inputs.manifest_branch }}" >> $GITHUB_OUTPUT
+          else
+            echo "manifest_branch=${{ env.manifest_branch }}" >> $GITHUB_OUTPUT
+          fi
+
   trigger_ci_pr:
     needs: populate_env_vars
     name: "Trigger CI PR workflow"
@@ -78,6 +90,6 @@ jobs:
           github_token: ${{ inputs.CI_TOKEN }}
           workflow_file_name: ci_pr.yaml
           ref: main
-          client_payload: '{"manifest_name":"${{ needs.populate_env_vars.outputs.manifest_name }}", "tests_type":"${{ needs.populate_env_vars.outputs.system_tests_type }}", "manifest_branch":"${{ inputs.manifest_branch }}", "github_runner_label":"pr-checks", "run_name":"Discovery Client PR checks", "branch_name":"${{ needs.populate_env_vars.outputs.branch_name }}"}'
+          client_payload: '{"manifest_name":"${{ needs.populate_env_vars.outputs.manifest_name }}", "tests_type":"${{ needs.populate_env_vars.outputs.system_tests_type }}", "manifest_branch":"${{ needs.populate_env_vars.outputs.manifest_branch }}", "github_runner_label":"pr-checks", "run_name":"Discovery Client PR checks", "branch_name":"${{ needs.populate_env_vars.outputs.branch_name }}"}'
           trigger_workflow: true
           wait_workflow: true
