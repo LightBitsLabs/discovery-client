@@ -16,7 +16,7 @@ DISCOVERY_CLIENT_RELEASE = 1
 
 override BIN_NAME := lb-nvme-discovery-client
 override DEFAULT_REL := 0.0.0
-override VERSION_RELEASE := $(or $(shell cat $(WORKSPACE_TOP)/internal-csi/los-csi/VERSION 2>/dev/null),$(DEFAULT_REL))
+override VERSION_RELEASE := $(or $(shell cat $(WORKSPACE_TOP)/los-csi/VERSION 2>/dev/null),$(DEFAULT_REL))
 override RELEASE := $(if $(BUILD_ID),$(VERSION_RELEASE).$(BUILD_ID),$(VERSION_RELEASE))
 
 override BUILD_HOST := $(shell hostname)
