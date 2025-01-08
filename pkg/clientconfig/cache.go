@@ -235,6 +235,10 @@ func (c *cache) createReferralsFile() error {
 		c.log.WithError(err).Errorf("Failed to write referrals to temp file")
 		return err
 	}
+	if err := tmpfile.Sync(); err != nil {
+		c.log.WithError(err).Errorf("Failed to sync temp file")
+		return err
+	}
 	if err = tmpfile.Chmod(0644); err != nil {
 		c.log.WithError(err).Errorf("Failed to chmod temp file to 0644")
 		return err
