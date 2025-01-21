@@ -396,6 +396,10 @@ func (c *cache) Run(sync bool) error {
 					if len(pairs) > 0 {
 						c.notifyChange(pairs)
 					}
+				case Remove:
+					// today we don't handle remove events knowingly,
+					// but we want to prevent the warn msg to log.
+					continue
 				default:
 					c.log.Warnf("unhandled event for file: %q. op: %s", event.Name, event.Op)
 				}
