@@ -477,12 +477,15 @@ func (c *cache) fileAdded(filename string) ([]ClientClusterPair, error) {
 	return pairs, nil
 }
 
-func (c *cache) existEntry(checkedEntry *Entry, entriesList []*Entry) bool {
+func (c *cache) existEntry(newEntry *Entry, entriesList []*Entry) bool {
 	for _, inListEntry := range entriesList {
 		c.log.Debugf("[existEntry] new: %s, existing entry: %s",
-			checkedEntry.String(),
+			newEntry.String(),
 			EntriesToString(entriesList))
-		if checkedEntry.compare(inListEntry) {
+		if newEntry.compare(inListEntry) {
+			// TODO: check if we need to update the entry, and find a way to
+			// propagate the change to the cache connections.
+			// (for example, if the ctrlLossTMO changed)
 			return true
 		}
 	}
