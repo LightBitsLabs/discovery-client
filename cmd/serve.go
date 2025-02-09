@@ -19,13 +19,14 @@ import (
 	"os"
 	"time"
 
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+
 	"github.com/lightbitslabs/discovery-client/application"
 	"github.com/lightbitslabs/discovery-client/model"
 	"github.com/lightbitslabs/discovery-client/pkg/logging"
 	"github.com/lightbitslabs/discovery-client/pkg/processutil"
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 func newServeCmd() *cobra.Command {
@@ -35,6 +36,7 @@ func newServeCmd() *cobra.Command {
 		Short:             "Start NVMeOF Discovery Client",
 		Long:              ``,
 		DisableAutoGenTag: true,
+		SilenceUsage:      true,
 		RunE:              serveCmdFunc,
 	}
 

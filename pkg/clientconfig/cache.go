@@ -27,10 +27,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/lightbitslabs/discovery-client/metrics"
 	"github.com/lightbitslabs/discovery-client/model"
 	"github.com/lightbitslabs/discovery-client/pkg/hostapi"
-	"github.com/sirupsen/logrus"
 )
 
 type ReferralKey struct {
@@ -60,13 +61,15 @@ type Connection struct {
 	AENChan      chan hostapi.AENStruct
 	ConnectionID hostapi.ConnectionID
 	State        bool
+	CtrlLossTMO  *int // seconds
 }
 
-func newConnection(ctx context.Context, key TKey) *Connection {
+func newConnection(ctx context.Context, key TKey, ctrlLossTMO *int) *Connection {
 	c := &Connection{
-		Key:     key,
-		log:     logrus.WithFields(logrus.Fields{"traddr": key.Ip, "trsvcid": key.port, "nqn": key.Nqn}),
-		AENChan: make(chan hostapi.AENStruct),
+		Key:         key,
+		log:         logrus.WithFields(logrus.Fields{"traddr": key.Ip, "trsvcid": key.port, "nqn": key.Nqn}),
+		AENChan:     make(chan hostapi.AENStruct),
+		CtrlLossTMO: ctrlLossTMO,
 	}
 	c.Ctx, c.cancel = context.WithCancel(ctx)
 	c.SetState(false)
@@ -232,6 +235,10 @@ func (c *cache) createReferralsFile() error {
 		c.log.WithError(err).Errorf("Failed to write referrals to temp file")
 		return err
 	}
+	if err := tmpfile.Sync(); err != nil {
+		c.log.WithError(err).Errorf("Failed to sync temp file")
+		return err
+	}
 	if err = tmpfile.Chmod(0644); err != nil {
 		c.log.WithError(err).Errorf("Failed to chmod temp file to 0644")
 		return err
@@ -389,6 +396,10 @@ func (c *cache) Run(sync bool) error {
 					if len(pairs) > 0 {
 						c.notifyChange(pairs)
 					}
+				case Remove:
+					// today we don't handle remove events knowingly,
+					// but we want to prevent the warn msg to log.
+					continue
 				default:
 					c.log.Warnf("unhandled event for file: %q. op: %s", event.Name, event.Op)
 				}
@@ -466,9 +477,15 @@ func (c *cache) fileAdded(filename string) ([]ClientClusterPair, error) {
 	return pairs, nil
 }
 
-func existEntry(checkedEntry *Entry, entriesList []*Entry) bool {
+func (c *cache) existEntry(newEntry *Entry, entriesList []*Entry) bool {
 	for _, inListEntry := range entriesList {
-		if reflect.DeepEqual(checkedEntry, inListEntry) {
+		c.log.Debugf("[existEntry] new: %s, existing entry: %s",
+			newEntry.String(),
+			EntriesToString(entriesList))
+		if newEntry.compare(inListEntry) {
+			// TODO: check if we need to update the entry, and find a way to
+			// propagate the change to the cache connections.
+			// (for example, if the ctrlLossTMO changed)
 			return true
 		}
 	}
@@ -476,29 +493,39 @@ func existEntry(checkedEntry *Entry, entriesList []*Entry) bool {
 }
 
 func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
-	if existEntry(newEntry, c.cacheEntries) {
+	if c.existEntry(newEntry, c.cacheEntries) {
 		c.log.Debugf("entry %+v already found in cache - no need to add", newEntry)
 		return ClientClusterPair{}, nil
 	}
+	if newEntry.EntrySource == EntrySourceReferral && newEntry.CtrlLossTMO == nil {
+		for _, entry := range c.cacheEntries {
+			if entry.EntrySource == EntrySourceUser && entry.CtrlLossTMO != nil {
+				newEntry.CtrlLossTMO = entry.CtrlLossTMO
+				break
+			}
+		}
+	}
 	c.cacheEntries = append(c.cacheEntries, newEntry)
-	c.log.Debugf("added cache entry %+v. Cache has now %d entries", newEntry, len(c.cacheEntries))
+	c.log.Infof("added cache (len=%d) entry: %s", len(c.cacheEntries), newEntry.String())
 	metrics.Metrics.EntriesTotal.WithLabelValues().Inc()
 
-	key := TKey{transport: newEntry.Transport, Ip: newEntry.Traddr, port: newEntry.Trsvcid, Nqn: newEntry.Subsysnqn, hostnqn: newEntry.Hostnqn}
+	key := TKey{transport: newEntry.Transport, Ip: newEntry.Traddr,
+		port: newEntry.Trsvcid, Nqn: newEntry.Subsysnqn,
+		hostnqn: newEntry.Hostnqn}
 	pair := ClientClusterPair{
 		ClusterNqn: newEntry.Subsysnqn,
 		HostNqn:    newEntry.Hostnqn,
 	}
 	conn, ok := c.connections[pair].ClusterConnectionsMap[key]
 	if !ok {
-		conn = newConnection(c.ctx, key)
+		conn = newConnection(c.ctx, key, newEntry.CtrlLossTMO)
 		conn.Hostnqn = newEntry.Hostnqn
 		c.connections.AddConnection(key, conn)
 		metrics.Metrics.Connections.WithLabelValues(key.transport, key.Ip, strconv.Itoa(key.port), key.Nqn, conn.Hostnqn).Inc()
 		c.log.Debugf("Added %s to cache connections", conn)
 		return pair, nil
 	}
-	err := fmt.Errorf("Entry %+v not cached, though %s is in cache", newEntry, conn)
+	err := fmt.Errorf("Entry %+v not cached, though '%s' is in cache", newEntry, conn)
 	c.log.WithError(err).Error("Mismatch between cache entries and cache connections")
 	return ClientClusterPair{}, err
 }
@@ -578,7 +605,7 @@ func (c *cache) removeConnectionsNotInReferrals(referrals ReferralMap) (removedC
 	for _, cachedEntry := range c.cacheEntries {
 		// We remove entries that are not in referrals if they share the same hostnqn and subsystemnqn as the referrals
 		// We use the last referral for hostnqn and subsystemnqn after we checked they are equal in all referrals
-		if !existEntry(cachedEntry, referralEntries) && cachedEntry.Hostnqn == currentPair.HostNqn && cachedEntry.Subsysnqn == currentPair.ClusterNqn {
+		if !c.existEntry(cachedEntry, referralEntries) && cachedEntry.Hostnqn == currentPair.HostNqn && cachedEntry.Subsysnqn == currentPair.ClusterNqn {
 			c.log.Debugf("Cached entry %+v not found in referrals. Will be removed from cache", cachedEntry)
 			entriesToRemove = append(entriesToRemove, cachedEntry)
 		}
@@ -598,12 +625,14 @@ func (c *cache) removeConnectionsNotInReferrals(referrals ReferralMap) (removedC
 
 func getEntryFromReferral(refKey ReferralKey, referral *hostapi.NvmeDiscPageEntry) *Entry {
 	return &Entry{
-		Transport:  "tcp",
-		Trsvcid:    int(referral.TrsvcID),
-		Traddr:     referral.Traddr,
-		Hostnqn:    refKey.Hostnqn,
-		Subsysnqn:  refKey.DPSubNqn,
-		Persistent: true,
+		Transport:   "tcp",
+		Trsvcid:     int(referral.TrsvcID),
+		Traddr:      referral.Traddr,
+		Hostnqn:     refKey.Hostnqn,
+		Subsysnqn:   refKey.DPSubNqn,
+		Persistent:  true,
+		EntrySource: EntrySourceReferral,
+		CtrlLossTMO: nil,
 	}
 }
 

@@ -51,12 +51,15 @@ type AppConfig struct {
 	MaxIOQueues              int               `yaml:"maxIOQueues"`
 	AutoDetectEntries        AutoDetectEntries `yaml:"autoDetectEntries,omitempty"`
 	NvmeHostIDPath           string            `yaml:"nvmeHostIDPath,omitempty"`
-	Kato					 int 			   `yaml:"kato"`
+	Kato                     int               `yaml:"kato"`
 }
 
 func (cfg *AppConfig) verifyConfigurationIsValid() error {
 	if cfg.ClientConfigDir == cfg.InternalDir {
 		return fmt.Errorf("Internal dir identical to ClientConfigDir: %q", cfg.ClientConfigDir)
+	}
+	if cfg.ReconnectInterval == 0 {
+		cfg.ReconnectInterval = 5 * time.Second
 	}
 	return cfg.Logging.IsValid()
 }

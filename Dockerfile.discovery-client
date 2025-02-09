@@ -55,7 +55,7 @@ LABEL maintainers="Lightbits Labs" \
 
 RUN apk update && \
     apk add --no-cache \
-    util-linux
+    util-linux curl
 
 RUN mkdir -p /etc/{discovery-client,nvme}
 COPY --from=builder /go/src/github.com/lightbitslabs/discovery-client/etc/discovery-client/discovery-client.yaml /etc/discovery-client/

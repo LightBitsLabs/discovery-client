@@ -23,12 +23,13 @@ import (
 	"syscall"
 
 	"github.com/coreos/go-systemd/daemon"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sirupsen/logrus"
+
 	"github.com/lightbitslabs/discovery-client/model"
 	"github.com/lightbitslabs/discovery-client/pkg/clientconfig"
 	"github.com/lightbitslabs/discovery-client/pkg/nvme/nvmehost"
 	"github.com/lightbitslabs/discovery-client/service"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/sirupsen/logrus"
 )
 
 // App - the main application
@@ -74,6 +75,13 @@ func (app *App) Start() error {
 				return err
 			}
 		}
+	}
+	// if we can't find /dev/nvme-fabrics, we will not start the service
+	if _, err := os.Stat("/dev/nvme-fabrics"); os.IsNotExist(err) {
+		app.log.WithError(err).Error("file /dev/nvme-fabrics does not exists." +
+			" you may need to load nvme-tcp by running 'modprobe -a nvme-tcp'" +
+			"NOTE: modprobe is not persist between reboot")
+		return err
 	}
 	app.cache = clientconfig.NewCache(app.ctx, app.cfg.ClientConfigDir, app.cfg.InternalDir, &app.cfg.AutoDetectEntries)
 	hostAPI := nvmehost.NewHostApi(app.cfg.LogPagePaginationEnabled, app.cfg.NvmeHostIDPath)

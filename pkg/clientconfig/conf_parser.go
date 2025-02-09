@@ -16,6 +16,7 @@ package clientconfig
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 	"unicode"
 
 	"github.com/sirupsen/logrus"
+
 	"github.com/lightbitslabs/discovery-client/pkg/nvme"
 )
 
@@ -32,14 +34,24 @@ const (
 	InternalJson      = "internal.json"
 )
 
+type EntrySource string
+
+const (
+	EntrySourceUser     EntrySource = "user"
+	EntrySourceReferral EntrySource = "referral"
+	EntrySourceInternal EntrySource = "internal"
+)
+
 type Entry struct {
-	Transport  string
-	Trsvcid    int
-	Traddr     string
-	Hostnqn    string
-	Subsysnqn  string
-	Persistent bool
-	Hostaddr   string
+	Transport   string
+	Trsvcid     int
+	Traddr      string
+	Hostnqn     string
+	Subsysnqn   string
+	Persistent  bool
+	Hostaddr    string
+	EntrySource EntrySource
+	CtrlLossTMO *int // time in seconds - nil means not set.
 }
 
 func (e *Entry) compare(other *Entry) bool {
@@ -73,13 +85,25 @@ func (e *Entry) verify() error {
 	if len(e.Hostnqn) == 0 {
 		return fmt.Errorf("Hostnqn is mandatory")
 	}
+	if e.CtrlLossTMO != nil && *e.CtrlLossTMO < -1 {
+		return fmt.Errorf("CtrlLossTMO must be >= -1")
+	}
 	return nil
+}
+
+func (e *Entry) String() string {
+	newEntryJson, err := json.Marshal(e)
+	if err != nil {
+		return ""
+	}
+	return string(newEntryJson)
 }
 
 func EntriesToString(entries []*Entry) string {
 	var sb strings.Builder
 	for _, entry := range entries {
-		sb.WriteString(fmt.Sprintf("%+v\n", entry))
+		sb.WriteString(entry.String())
+		sb.WriteString("\n")
 	}
 	return sb.String()
 }
@@ -160,6 +184,19 @@ func parse(filename string) ([]*Entry, error) {
 				e.Subsysnqn = strings.TrimSpace(s[i])
 			case "-p", "--persistent":
 				e.Persistent = true
+			case "-l", "--ctrl-loss-tmo":
+				i++
+				value := strings.TrimSpace(s[i])
+				ctrlLossTMO, err := strconv.ParseInt(value, 10, 32)
+				if err != nil {
+					return nil, &ParserError{
+						Msg:     fmt.Sprintf("bad controller loss timeout value"),
+						Details: fmt.Sprintf("%s is not a valid int", s[i]),
+						Err:     err,
+					}
+				}
+				ctrlLossTMOInt := int(ctrlLossTMO)
+				e.CtrlLossTMO = &ctrlLossTMOInt
 			default:
 				return nil, &ParserError{
 					Msg:     fmt.Sprintf("unknown flag"),
@@ -168,6 +205,7 @@ func parse(filename string) ([]*Entry, error) {
 				}
 			}
 		}
+		e.EntrySource = EntrySourceUser
 		if err := e.verify(); err != nil {
 			logrus.Warnf("entry: %s not valid. %v", line, err)
 			continue

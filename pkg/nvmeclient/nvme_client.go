@@ -28,13 +28,14 @@ import (
 
 	"github.com/avast/retry-go"
 	"github.com/google/uuid"
+	"github.com/lunixbochs/struc"
+	"github.com/sirupsen/logrus"
+
 	"github.com/lightbitslabs/discovery-client/metrics"
 	"github.com/lightbitslabs/discovery-client/pkg/hostapi"
 	"github.com/lightbitslabs/discovery-client/pkg/ioctl"
 	"github.com/lightbitslabs/discovery-client/pkg/nvme"
 	"github.com/lightbitslabs/discovery-client/pkg/regexutil"
-	"github.com/lunixbochs/struc"
-	"github.com/sirupsen/logrus"
 )
 
 //#include <../nvme/linux/nvme.h>
@@ -501,12 +502,15 @@ func Connect(request *ConnectRequest) (*CtrlIdentifier, error) {
 	return ctrlID, nil
 }
 
-func ConnectAll(discoveryRequest *hostapi.DiscoverRequest, maxIOQueues int, kato int) ([]*CtrlIdentifier, error) {
+func ConnectAll(discoveryRequest *hostapi.DiscoverRequest,
+	maxIOQueues int, kato int,
+	ctrlLossTMO *int) ([]*CtrlIdentifier, error) {
 	logPageEntries, err := Discover(discoveryRequest)
 	if err != nil {
 		return nil, err
 	}
-	ctrls := ConnectAllNVMEDevices(logPageEntries, discoveryRequest.Hostnqn, discoveryRequest.Transport, maxIOQueues, kato)
+	ctrls := ConnectAllNVMEDevices(logPageEntries, discoveryRequest.Hostnqn,
+		discoveryRequest.Transport, maxIOQueues, kato, ctrlLossTMO)
 	return ctrls, nil
 }
 
@@ -528,12 +532,20 @@ func connectNVMEDevicesWithRetry(request *ConnectRequest) (*CtrlIdentifier, erro
 	return ctrlID, err
 }
 
-func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn string, transport string, maxIOQueues int, kato int) []*CtrlIdentifier {
+func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry,
+	hostnqn string, transport string,
+	maxIOQueues int, kato int,
+	ctrlLossTMO *int,
+) []*CtrlIdentifier {
 	var ctrls []*CtrlIdentifier
 	for _, logPageEntry := range logPageEntries {
 		// skip the non IO subsystems.
 		if logPageEntry.SubType != nvme.NVME_NQN_NVME {
 			continue
+		}
+		ctrlLossTMOValue := -1
+		if ctrlLossTMO != nil {
+			ctrlLossTMOValue = *ctrlLossTMO
 		}
 		request := &ConnectRequest{
 			Traddr:      logPageEntry.Traddr,
@@ -541,7 +553,7 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn 
 			Subsysnqn:   logPageEntry.Subnqn,
 			Hostnqn:     hostnqn,
 			Transport:   transport,
-			CtrlLossTMO: -1,
+			CtrlLossTMO: ctrlLossTMOValue,
 			MaxIOQueues: maxIOQueues,
 			Kato:        kato,
 		}
@@ -562,8 +574,12 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry, hostnqn 
 						// discovery service will still report this controller to connect to but we will fail to connect.
 						// we can't deduce that if the DS is down on that node we will fail to connect cause there might be a network partition
 						// on the discovery-service or the DS is down on that node but the IO controller is still accessible.
-						logrus.WithError(perr).Warn("failed to connect IO controller. This may be a transient error or due to a node being down.",
-							"Continuing to attempt connection until the discovery-service stops providing the down node's address..")
+						if strings.Contains(perr.Error(), "open /dev/nvme-fabrics: no such file or directory") {
+							logrus.WithError(perr).Warn("failed to connect IO controller. You may need to load nvme-tcp kernel module")
+						} else {
+							logrus.WithError(perr).Warn("failed to connect IO controller. This may be a transient error or due to a node being down." +
+								"Continuing to attempt connection until the discovery-service stops providing the down node's address..")
+						}
 						continue
 					}
 				}
