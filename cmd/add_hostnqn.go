@@ -20,9 +20,10 @@ import (
 	"path"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/lightbitslabs/discovery-client/model"
 	"github.com/lightbitslabs/discovery-client/pkg/clientconfig"
-	"github.com/spf13/cobra"
 )
 
 type output struct {
@@ -74,13 +75,28 @@ func addHostNqnCmdFunc(cmd *cobra.Command, args []string) error {
 		}
 	}
 	name, err := cmd.Flags().GetString("name")
+	if err != nil {
+		return fmt.Errorf("failed to get 'name' value, %w", err)
+	}
 	if strings.HasPrefix(name, model.DiscoveryClientReservedPrefix) {
 		return fmt.Errorf("name can't start with prefix: %q", model.DiscoveryClientReservedPrefix)
 	}
 	hostnqn, err := cmd.Flags().GetString("hostnqn")
+	if err != nil {
+		return fmt.Errorf("failed to get 'hostnqn' value, %w", err)
+	}
 	nqn, err := cmd.Flags().GetString("nqn")
+	if err != nil {
+		return fmt.Errorf("failed to get 'nqn' value, %w", err)
+	}
 	transport, err := cmd.Flags().GetString("transport")
+	if err != nil {
+		return fmt.Errorf("failed to get 'transport' value, %w", err)
+	}
 	addresses, err := cmd.Flags().GetStringSlice("addresses")
+	if err != nil {
+		return fmt.Errorf("failed to get 'addresses' value, %w", err)
+	}
 
 	entries, err := clientconfig.CreateEntries(addresses, hostnqn, nqn, transport)
 	if err != nil {
