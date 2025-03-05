@@ -19,12 +19,14 @@ import (
 	"os"
 	"time"
 
-	"github.com/lightbitslabs/discovery-client/pkg/logging"
 	"github.com/spf13/viper"
+
+	"github.com/lightbitslabs/discovery-client/pkg/logging"
 )
 
 const (
 	DiscoveryClientReservedPrefix = "tmp.dc."
+	DefaultHostIDPath             = "/etc/nvme/hostid"
 )
 
 type DebugInfo struct {

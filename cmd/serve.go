@@ -72,7 +72,7 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().String("internalDir", "/etc/discovery-client/internal", "Directory to store internal cache")
 	viper.BindPFlag("internalDir", cmd.Flags().Lookup("internalDir"))
 
-	cmd.Flags().String("nvmeHostIDPath", "/etc/nvme/hostid", "file path containing nvme host id")
+	cmd.Flags().String("nvmeHostIDPath", model.DefaultHostIDPath, "file path containing nvme host id")
 	viper.BindPFlag("nvmeHostIDPath", cmd.Flags().Lookup("nvmeHostIDPath"))
 
 	cmd.Flags().Duration("pollingInterval", 5*time.Second, "Polling interval for querying the discovery service.")

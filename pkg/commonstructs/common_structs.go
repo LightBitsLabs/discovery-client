@@ -25,10 +25,14 @@ type Entry struct {
 	Trsvcid   int
 	Hostnqn   string
 	Nqn       string
+	HostID    string
 }
 
 func (entry *Entry) String() string {
-	return fmt.Sprintf("-t %s -a %s -s %d -q %s -n %s\n", entry.Transport, entry.Traddr, entry.Trsvcid, entry.Hostnqn, entry.Nqn)
+	return fmt.Sprintf("-t %s -a %s -s %d -q %s -n %s --hostid %s\n",
+		entry.Transport, entry.Traddr, entry.Trsvcid, entry.Hostnqn, entry.Nqn,
+		entry.HostID,
+	)
 }
 
 func EntriesToString(entries []*Entry) string {

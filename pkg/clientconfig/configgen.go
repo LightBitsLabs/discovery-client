@@ -25,11 +25,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/lightbitslabs/discovery-client/model"
 	"github.com/lightbitslabs/discovery-client/pkg/commonstructs"
 	"github.com/lightbitslabs/discovery-client/pkg/nvme"
 	"github.com/lightbitslabs/discovery-client/pkg/regexutil"
-	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -37,7 +38,24 @@ var (
 	NvmeCtrlPath = filepath.Join("/sys/class/nvme", "nvme[0-9]")
 )
 
-func CreateEntries(addresses []string, hostnqn string, nqn string, transport string) ([]*commonstructs.Entry, error) {
+func CreateEntries(addresses []string,
+	hostnqn string,
+	nqn string,
+	transport string,
+	hostid string,
+) ([]*commonstructs.Entry, error) {
+	if hostnqn == "" {
+		return nil, fmt.Errorf("hostnqn must be set")
+	}
+	if transport == "" {
+		return nil, fmt.Errorf("transport must be set")
+	}
+	if nqn == "" {
+		return nil, fmt.Errorf("subsys-nqn must be set")
+	}
+	if hostid == "" {
+		return nil, fmt.Errorf("hostid must be set")
+	}
 	var entries []*commonstructs.Entry
 	for _, address := range addresses {
 		host, port, err := net.SplitHostPort(address)
@@ -60,6 +78,7 @@ func CreateEntries(addresses []string, hostnqn string, nqn string, transport str
 			Trsvcid:   int(port_str),
 			Hostnqn:   hostnqn,
 			Nqn:       nqn,
+			HostID:    hostid,
 		}
 		entries = append(entries, e)
 	}
@@ -148,6 +167,12 @@ func DetectEntriesByIOControllers(nvmeCtrlPath string, discoveryServicePort uint
 			log.WithField("error", err).Warnf("failed to read hostnqn")
 			continue
 		}
+		hostID, err := valueFromFile(filepath.Join(d, "hostid"))
+		if err != nil {
+			log.WithField("error", err).Warnf("failed to read hostid")
+			continue
+		}
+
 		// format: traddr=10.20.58.40,trsvcid=4420
 		address, err := valueFromFile(filepath.Join(d, "address"))
 		if err != nil {
@@ -160,7 +185,7 @@ func DetectEntriesByIOControllers(nvmeCtrlPath string, discoveryServicePort uint
 			continue
 		}
 		endpoint := fmt.Sprintf("%s:%d", traddr, discoveryServicePort)
-		entries, err := CreateEntries([]string{endpoint}, hostNqn, subsysNqn, transport)
+		entries, err := CreateEntries([]string{endpoint}, hostNqn, subsysNqn, transport, hostID)
 		if err != nil {
 			log.WithField("error", err).Warnf("failed to create entries")
 			continue

@@ -47,6 +47,7 @@ type Entry struct {
 	Trsvcid     int
 	Traddr      string
 	Hostnqn     string
+	Hostid      string
 	Subsysnqn   string
 	Persistent  bool
 	Hostaddr    string
@@ -179,6 +180,9 @@ func parse(filename string) ([]*Entry, error) {
 			case "-q", "--hostnqn":
 				i++
 				e.Hostnqn = strings.TrimSpace(s[i])
+			case "-I", "--hostid":
+				i++
+				e.Hostid = strings.TrimSpace(s[i])
 			case "-n", "--subsysnqn":
 				i++
 				e.Subsysnqn = strings.TrimSpace(s[i])

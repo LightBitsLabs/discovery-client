@@ -20,10 +20,12 @@ import (
 	"path"
 	"strings"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/lightbitslabs/discovery-client/model"
 	"github.com/lightbitslabs/discovery-client/pkg/clientconfig"
+	"github.com/lightbitslabs/discovery-client/pkg/nvme"
 )
 
 type output struct {
@@ -41,6 +43,7 @@ func newAddHostNqnCmd() *cobra.Command {
 	cmd.Flags().StringP("name", "", "", fmt.Sprintf("name of the file to create. can't contain prefix: %q", model.DiscoveryClientReservedPrefix))
 	cmd.Flags().StringSliceP("addresses", "a", []string{}, "endpoints of discovery services. format: <hostname|ip-address>:<port>")
 	cmd.Flags().StringP("hostnqn", "q", "", "host nqn")
+	cmd.Flags().StringP("hostid", "I", "", "host id (defaults to value from '/etc/nvme/hostid')")
 	cmd.Flags().StringP("nqn", "n", "", "subsystem nqn")
 	cmd.Flags().StringP("transport", "t", "tcp", "transport name - default to tcp")
 
@@ -98,7 +101,20 @@ func addHostNqnCmdFunc(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get 'addresses' value, %w", err)
 	}
 
-	entries, err := clientconfig.CreateEntries(addresses, hostnqn, nqn, transport)
+	var hostid string
+	if cmd.Flags().Changed("hostid") {
+		hostid, err = cmd.Flags().GetString("hostid")
+		if err != nil {
+			return fmt.Errorf("failed to get 'hostid' value, %w", err)
+		}
+	} else {
+		hostid, err = nvme.GetOrCreateHostID(logrus.New(), appConfig.NvmeHostIDPath)
+		if err != nil {
+			return fmt.Errorf("failed to get hostid: %w", err)
+		}
+	}
+
+	entries, err := clientconfig.CreateEntries(addresses, hostnqn, nqn, transport, hostid)
 	if err != nil {
 		return err
 	}

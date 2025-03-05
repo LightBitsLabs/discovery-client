@@ -54,6 +54,7 @@ type TKey struct {
 
 type Connection struct {
 	Hostnqn      string
+	Hostid       string
 	Key          TKey
 	Ctx          context.Context
 	cancel       context.CancelFunc
@@ -94,7 +95,8 @@ func (c *Connection) GetDiscoveryRequest(kato time.Duration) *hostapi.DiscoverRe
 
 func (c *Connection) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("connection: %s:%d, id: %s, subsystem nqn: %s, hostnqn: %s", c.Key.Ip, c.Key.port, c.ConnectionID, c.Key.Nqn, c.Hostnqn))
+	sb.WriteString(fmt.Sprintf("connection: %s:%d, id: %s, subsystem nqn: %s, hostnqn: %s, hostid: %s",
+		c.Key.Ip, c.Key.port, c.ConnectionID, c.Key.Nqn, c.Hostnqn, c.Hostid))
 	return sb.String()
 }
 
@@ -520,6 +522,7 @@ func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
 	if !ok {
 		conn = newConnection(c.ctx, key, newEntry.CtrlLossTMO)
 		conn.Hostnqn = newEntry.Hostnqn
+		conn.Hostid = newEntry.Hostid
 		c.connections.AddConnection(key, conn)
 		metrics.Metrics.Connections.WithLabelValues(key.transport, key.Ip, strconv.Itoa(key.port), key.Nqn, conn.Hostnqn).Inc()
 		c.log.Debugf("Added %s to cache connections", conn)

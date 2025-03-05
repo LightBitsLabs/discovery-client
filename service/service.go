@@ -256,7 +256,9 @@ func (s *service) Start() error {
 						continue
 					}
 					nvmeclient.ConnectAllNVMEDevices(nvmeLogPageEntries,
-						request.Hostnqn, request.Transport,
+						request.Hostnqn,
+						conn.Hostid,
+						request.Transport,
 						s.maxIOQueues, s.kato, conn.CtrlLossTMO)
 					refMap := clientconfig.ReferralMap{}
 					for _, referral := range discLogPageEntries {

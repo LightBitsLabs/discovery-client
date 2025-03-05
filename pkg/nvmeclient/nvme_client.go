@@ -27,11 +27,11 @@ import (
 	"unsafe"
 
 	"github.com/avast/retry-go"
-	"github.com/google/uuid"
 	"github.com/lunixbochs/struc"
 	"github.com/sirupsen/logrus"
 
 	"github.com/lightbitslabs/discovery-client/metrics"
+	"github.com/lightbitslabs/discovery-client/model"
 	"github.com/lightbitslabs/discovery-client/pkg/hostapi"
 	"github.com/lightbitslabs/discovery-client/pkg/ioctl"
 	"github.com/lightbitslabs/discovery-client/pkg/nvme"
@@ -289,6 +289,7 @@ func addCtrl(options string) (*CtrlIdentifier, error) {
 			return
 		}
 	}()
+	logrus.Debugf("calling nvme connect with options: '%s'", options)
 	_, err = f.Write([]byte(options))
 	if err != nil {
 		return nil, &NvmeClientError{
@@ -479,7 +480,16 @@ func Connect(request *ConnectRequest) (*CtrlIdentifier, error) {
 		}
 	}
 	request.Traddr = traddr
-	request.Hostid = uuid.NewMD5(uuid.Nil, []byte(request.Hostnqn)).String()
+	if request.Hostid == "" {
+		request.Hostid, err = nvme.GetOrCreateHostID(logrus.New(), model.DefaultHostIDPath)
+		if err != nil {
+			return nil, &NvmeClientError{
+				Status: CONN_FAILED,
+				Msg:    "failed to get hostid",
+				Err:    err,
+			}
+		}
+	}
 
 	ctrlID, err := addCtrl(request.ToOptions())
 	if err != nil {
@@ -510,6 +520,7 @@ func ConnectAll(discoveryRequest *hostapi.DiscoverRequest,
 		return nil, err
 	}
 	ctrls := ConnectAllNVMEDevices(logPageEntries, discoveryRequest.Hostnqn,
+		discoveryRequest.Hostid,
 		discoveryRequest.Transport, maxIOQueues, kato, ctrlLossTMO)
 	return ctrls, nil
 }
@@ -533,7 +544,9 @@ func connectNVMEDevicesWithRetry(request *ConnectRequest) (*CtrlIdentifier, erro
 }
 
 func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry,
-	hostnqn string, transport string,
+	hostnqn string,
+	hostid string,
+	transport string,
 	maxIOQueues int, kato int,
 	ctrlLossTMO *int,
 ) []*CtrlIdentifier {
@@ -552,6 +565,7 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry,
 			Trsvcid:     int(logPageEntry.TrsvcID),
 			Subsysnqn:   logPageEntry.Subnqn,
 			Hostnqn:     hostnqn,
+			Hostid:      hostid,
 			Transport:   transport,
 			CtrlLossTMO: ctrlLossTMOValue,
 			MaxIOQueues: maxIOQueues,
@@ -604,7 +618,16 @@ func Discover(discoveryRequest *hostapi.DiscoverRequest) ([]*hostapi.NvmeDiscPag
 		}
 	}
 	discoveryRequest.Traddr = traddr
-	discoveryRequest.Hostid = uuid.NewMD5(uuid.Nil, []byte(discoveryRequest.Hostnqn)).String()
+	if discoveryRequest.Hostid == "" {
+		discoveryRequest.Hostid, err = nvme.GetOrCreateHostID(logrus.New(), model.DefaultHostIDPath)
+		if err != nil {
+			return nil, &NvmeClientError{
+				Status: CONN_FAILED,
+				Msg:    "failed to get hostid",
+				Err:    err,
+			}
+		}
+	}
 
 	ctrlID, err := addCtrl(discoveryRequest.ToOptions())
 	if err != nil {

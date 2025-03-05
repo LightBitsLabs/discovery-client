@@ -43,7 +43,10 @@ specified by the --nqn option.`,
 	cmd.Flags().StringP("hostnqn", "q", "", "hostnqn")
 	viper.BindPFlag("connect.hostnqn", cmd.Flags().Lookup("hostnqn"))
 
-	cmd.Flags().StringP("transport", "t", "tcp", "trtype")
+	cmd.Flags().StringP("hostid", "I", "", "user-defined hostid (if default not used)")
+	viper.BindPFlag("connect.hostid", cmd.Flags().Lookup("hostid"))
+
+	cmd.Flags().StringP("transport", "t", "tcp", "transport type")
 	viper.BindPFlag("connect.transport", cmd.Flags().Lookup("transport"))
 
 	cmd.Flags().StringP("host-traddr", "w", "", "host-traddr")
@@ -71,6 +74,7 @@ func connectCmdFunc(cmd *cobra.Command, args []string) error {
 		Trsvcid:     viper.GetInt("connect.trsvcid"),
 		Subsysnqn:   viper.GetString("connect.nqn"),
 		Hostnqn:     viper.GetString("connect.hostnqn"),
+		Hostid:      viper.GetString("connect.hostid"),
 		Transport:   viper.GetString("connect.transport"),
 		CtrlLossTMO: viper.GetInt("connect.ctrl-loss-tmo"),
 	}
