@@ -7,6 +7,7 @@ discovery-client:
     deps:
     - file://Makefile
     - file://pkg
+    - file://etc
     - file://model
     - file://vendor
     - file://application
