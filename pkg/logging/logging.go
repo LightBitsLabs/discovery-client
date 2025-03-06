@@ -129,21 +129,3 @@ func SetupLogging(cfg Config) error {
 
 	return nil
 }
-
-func SetupLoggingWithConsoleTimeStamp(cfg Config) error {
-	var err error
-	wantedLevel := logrus.InfoLevel
-	if len(cfg.Level) > 0 {
-		wantedLevel, err = logrus.ParseLevel(cfg.Level)
-		if err != nil {
-			return err
-		}
-	}
-
-	logrus.SetOutput(io.Discard)
-	disableTimeStamp := false
-	setupConsoleLogs(disableTimeStamp)
-	setupLoggingFile(cfg, wantedLevel)
-
-	return nil
-}
