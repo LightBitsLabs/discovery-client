@@ -55,7 +55,7 @@ func (c *Config) IsValid() error {
 
 func setupConsoleLogs(disableTimeStamp bool) {
 	writerMap := lfshook.WriterMap{}
-	for level := int(logrus.InfoLevel); level > int(logrus.PanicLevel); level-- {
+	for level := int(logrus.DebugLevel); level > int(logrus.PanicLevel); level-- {
 		writerMap[logrus.Level(level)] = os.Stdout
 	}
 
