@@ -22,10 +22,11 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/lightbitslabs/discovery-client/pkg/collections"
 	"github.com/rifflock/lfshook"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
+
+	"github.com/lightbitslabs/discovery-client/pkg/collections"
 )
 
 var (

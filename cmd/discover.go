@@ -67,7 +67,7 @@ func discoverCmdFunc(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("hostnqn(-q) must be set")
 	}
 	katoValue := kato
-	if viper.GetBool("discover.persistent") == false {
+	if !viper.GetBool("discover.persistent") {
 		katoValue = 0
 	}
 	entry := &hostapi.DiscoverRequest{

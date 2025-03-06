@@ -103,7 +103,7 @@ func (c *Connection) String() string {
 func (c *Connection) SetState(newState bool) {
 	update := newState != c.State
 	c.State = newState
-	if newState == true {
+	if newState {
 		metrics.Metrics.ConnectionState.WithLabelValues(c.Key.transport, c.Key.Ip, strconv.Itoa(c.Key.port), c.Key.Nqn).Set(1)
 	} else {
 		metrics.Metrics.ConnectionState.WithLabelValues(c.Key.transport, c.Key.Ip, strconv.Itoa(c.Key.port), c.Key.Nqn).Set(0)
@@ -528,14 +528,15 @@ func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
 		c.log.Debugf("Added %s to cache connections", conn)
 		return pair, nil
 	}
-	err := fmt.Errorf("Entry %+v not cached, though '%s' is in cache", newEntry, conn)
+	err := fmt.Errorf("Entry %+v not cached, though connection '%s' is in cache",
+		newEntry, conn)
 	c.log.WithError(err).Error("Mismatch between cache entries and cache connections")
 	return ClientClusterPair{}, err
 }
 
 func (c *cache) HandleReferrals(referrals ReferralMap) error {
 	if len(referrals) == 0 {
-		err := fmt.Errorf("Handle referrals got empty referrals map. This should never happen")
+		err := fmt.Errorf("handle referrals got empty referrals map. This should never happen")
 		c.log.WithError(err)
 		return err
 	}

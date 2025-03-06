@@ -148,7 +148,7 @@ func parse(filename string) ([]*Entry, error) {
 				_, err = nvme.AdjustTraddr(value)
 				if err != nil {
 					return nil, &ParserError{
-						Msg:     fmt.Sprintf("bad address"),
+						Msg:     "bad address",
 						Details: fmt.Sprintf("%s is not a valid hostname or IP address", s[i]),
 						Err:     err,
 					}
@@ -159,7 +159,7 @@ func parse(filename string) ([]*Entry, error) {
 				value := strings.TrimSpace(s[i])
 				if value != "tcp" {
 					return nil, &ParserError{
-						Msg:     fmt.Sprintf("bad transport"),
+						Msg:     "bad transport",
 						Details: fmt.Sprintf("%s is not a valid transport", s[i]),
 						Err:     err,
 					}
@@ -171,7 +171,7 @@ func parse(filename string) ([]*Entry, error) {
 				port, err := strconv.ParseInt(value, 10, 32)
 				if err != nil {
 					return nil, &ParserError{
-						Msg:     fmt.Sprintf("bad port"),
+						Msg:     "bad port",
 						Details: fmt.Sprintf("%s is not a valid int", s[i]),
 						Err:     err,
 					}
@@ -194,7 +194,7 @@ func parse(filename string) ([]*Entry, error) {
 				ctrlLossTMO, err := strconv.ParseInt(value, 10, 32)
 				if err != nil {
 					return nil, &ParserError{
-						Msg:     fmt.Sprintf("bad controller loss timeout value"),
+						Msg:     "bad controller loss timeout value",
 						Details: fmt.Sprintf("%s is not a valid int", s[i]),
 						Err:     err,
 					}
@@ -203,8 +203,8 @@ func parse(filename string) ([]*Entry, error) {
 				e.CtrlLossTMO = &ctrlLossTMOInt
 			default:
 				return nil, &ParserError{
-					Msg:     fmt.Sprintf("unknown flag"),
-					Details: fmt.Sprintf("%s is not a vaild flag", field),
+					Msg:     "unknown flag",
+					Details: fmt.Sprintf("%s is not a valid flag", field),
 					Err:     err,
 				}
 			}
