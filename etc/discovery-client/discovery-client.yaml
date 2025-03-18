@@ -5,7 +5,7 @@ reconnectInterval: 5s
 logPagePaginationEnabled: false
 maxIOQueues: 0
 kato: 10
-nvmeHostIDPath: /tmp/discovery-client/hostid
+nvmeHostIDPath: /etc/nvme/hostid
 logging:
   filename: "/var/log/discovery-client.log"
   maxAge: 96h

@@ -54,6 +54,7 @@ type TKey struct {
 
 type Connection struct {
 	Hostnqn      string
+	Hostid       string
 	Key          TKey
 	Ctx          context.Context
 	cancel       context.CancelFunc
@@ -94,14 +95,15 @@ func (c *Connection) GetDiscoveryRequest(kato time.Duration) *hostapi.DiscoverRe
 
 func (c *Connection) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("connection: %s:%d, id: %s, subsystem nqn: %s, hostnqn: %s", c.Key.Ip, c.Key.port, c.ConnectionID, c.Key.Nqn, c.Hostnqn))
+	sb.WriteString(fmt.Sprintf("connection: %s:%d, id: %s, subsystem nqn: %s, hostnqn: %s, hostid: %s",
+		c.Key.Ip, c.Key.port, c.ConnectionID, c.Key.Nqn, c.Hostnqn, c.Hostid))
 	return sb.String()
 }
 
 func (c *Connection) SetState(newState bool) {
 	update := newState != c.State
 	c.State = newState
-	if newState == true {
+	if newState {
 		metrics.Metrics.ConnectionState.WithLabelValues(c.Key.transport, c.Key.Ip, strconv.Itoa(c.Key.port), c.Key.Nqn).Set(1)
 	} else {
 		metrics.Metrics.ConnectionState.WithLabelValues(c.Key.transport, c.Key.Ip, strconv.Itoa(c.Key.port), c.Key.Nqn).Set(0)
@@ -520,19 +522,21 @@ func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
 	if !ok {
 		conn = newConnection(c.ctx, key, newEntry.CtrlLossTMO)
 		conn.Hostnqn = newEntry.Hostnqn
+		conn.Hostid = newEntry.Hostid
 		c.connections.AddConnection(key, conn)
 		metrics.Metrics.Connections.WithLabelValues(key.transport, key.Ip, strconv.Itoa(key.port), key.Nqn, conn.Hostnqn).Inc()
 		c.log.Debugf("Added %s to cache connections", conn)
 		return pair, nil
 	}
-	err := fmt.Errorf("Entry %+v not cached, though '%s' is in cache", newEntry, conn)
+	err := fmt.Errorf("Entry %+v not cached, though connection '%s' is in cache",
+		newEntry, conn)
 	c.log.WithError(err).Error("Mismatch between cache entries and cache connections")
 	return ClientClusterPair{}, err
 }
 
 func (c *cache) HandleReferrals(referrals ReferralMap) error {
 	if len(referrals) == 0 {
-		err := fmt.Errorf("Handle referrals got empty referrals map. This should never happen")
+		err := fmt.Errorf("handle referrals got empty referrals map. This should never happen")
 		c.log.WithError(err)
 		return err
 	}

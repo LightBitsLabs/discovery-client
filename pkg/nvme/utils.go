@@ -16,6 +16,16 @@ package nvme
 
 import (
 	"net"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
+)
+
+const (
+	DefaultHostIDPath = "/etc/nvme/hostid"
 )
 
 func minInt(x, y int) int {
@@ -47,4 +57,38 @@ func AdjustTraddr(traddr string) (string, error) {
 		return addrs[0].String(), nil
 	}
 	return "", err
+}
+
+func GetOrCreateHostID(log *logrus.Logger, nvmeHostIDPath string) (string, error) {
+	// if host-id file doesn't exist generate it, and save it to the file.
+	// if it does exist, read it from the file, and return it
+	var hostid string
+	if nvmeHostIDPath == "" {
+		nvmeHostIDPath = DefaultHostIDPath
+	}
+	data, err := os.ReadFile(nvmeHostIDPath)
+	if err != nil || string(data) == "" {
+		hostid = uuid.New().String() + "\n"
+		if string(data) == "" {
+			log.Debugf("file %q is empty", nvmeHostIDPath)
+		} else {
+			log.Warnf("failed to read %q file: %s", nvmeHostIDPath, err)
+		}
+		log.Infof("generated new hostid: %q and store to file: %q",
+			hostid, nvmeHostIDPath)
+		// make sure this folder exists before we create the hostid file.
+		if err := os.MkdirAll(filepath.Dir(nvmeHostIDPath), 0755); err != nil {
+			log.WithError(err).Errorf("failed to create %s folder",
+				filepath.Dir(nvmeHostIDPath))
+			return "", err
+		}
+		err = os.WriteFile(nvmeHostIDPath, []byte(hostid), 0644)
+		if err != nil {
+			log.WithError(err).Errorf("failed to write to %s file", nvmeHostIDPath)
+			return "", err
+		}
+	} else {
+		hostid = string(data)
+	}
+	return strings.TrimSpace(hostid), nil
 }

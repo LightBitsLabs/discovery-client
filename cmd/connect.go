@@ -17,9 +17,10 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/lightbitslabs/discovery-client/pkg/nvmeclient"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/lightbitslabs/discovery-client/pkg/nvmeclient"
 )
 
 func newConnectCmd() *cobra.Command {
@@ -40,16 +41,19 @@ specified by the --nqn option.`,
 	cmd.Flags().IntP("trsvcid", "s", 4420, "trsvcid")
 	viper.BindPFlag("connect.trsvcid", cmd.Flags().Lookup("trsvcid"))
 
-	cmd.Flags().StringP("hostnqn", "q", "", "hostnqn")
+	cmd.Flags().StringP("hostnqn", "q", "", "user-defined hostnqn")
 	viper.BindPFlag("connect.hostnqn", cmd.Flags().Lookup("hostnqn"))
 
-	cmd.Flags().StringP("transport", "t", "tcp", "trtype")
+	cmd.Flags().StringP("hostid", "I", "", "user-defined hostid (if default not used)")
+	viper.BindPFlag("connect.hostid", cmd.Flags().Lookup("hostid"))
+
+	cmd.Flags().StringP("transport", "t", "tcp", "transport type")
 	viper.BindPFlag("connect.transport", cmd.Flags().Lookup("transport"))
 
-	cmd.Flags().StringP("host-traddr", "w", "", "host-traddr")
+	cmd.Flags().StringP("host-traddr", "w", "", "host traddr (e.g. FC WWN's)")
 	viper.BindPFlag("connect.host-traddr", cmd.Flags().Lookup("host-traddr"))
 
-	cmd.Flags().StringP("nqn", "n", "", "nqn")
+	cmd.Flags().StringP("nqn", "n", "", "subsystem nqn")
 	viper.BindPFlag("connect.nqn", cmd.Flags().Lookup("nqn"))
 
 	cmd.Flags().IntP("ctrl-loss-tmo", "", -1, "controller loss timeout period (in seconds). Timeout is disabled by default (-1)")
@@ -71,6 +75,7 @@ func connectCmdFunc(cmd *cobra.Command, args []string) error {
 		Trsvcid:     viper.GetInt("connect.trsvcid"),
 		Subsysnqn:   viper.GetString("connect.nqn"),
 		Hostnqn:     viper.GetString("connect.hostnqn"),
+		Hostid:      viper.GetString("connect.hostid"),
 		Transport:   viper.GetString("connect.transport"),
 		CtrlLossTMO: viper.GetInt("connect.ctrl-loss-tmo"),
 	}

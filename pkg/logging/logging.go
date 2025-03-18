@@ -22,10 +22,11 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/lightbitslabs/discovery-client/pkg/collections"
 	"github.com/rifflock/lfshook"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
+
+	"github.com/lightbitslabs/discovery-client/pkg/collections"
 )
 
 var (
@@ -54,7 +55,7 @@ func (c *Config) IsValid() error {
 
 func setupConsoleLogs(disableTimeStamp bool) {
 	writerMap := lfshook.WriterMap{}
-	for level := int(logrus.InfoLevel); level > int(logrus.PanicLevel); level-- {
+	for level := int(logrus.DebugLevel); level > int(logrus.PanicLevel); level-- {
 		writerMap[logrus.Level(level)] = os.Stdout
 	}
 
@@ -123,24 +124,6 @@ func SetupLogging(cfg Config) error {
 
 	logrus.SetOutput(io.Discard)
 	disableTimeStamp := true
-	setupConsoleLogs(disableTimeStamp)
-	setupLoggingFile(cfg, wantedLevel)
-
-	return nil
-}
-
-func SetupLoggingWithConsoleTimeStamp(cfg Config) error {
-	var err error
-	wantedLevel := logrus.InfoLevel
-	if len(cfg.Level) > 0 {
-		wantedLevel, err = logrus.ParseLevel(cfg.Level)
-		if err != nil {
-			return err
-		}
-	}
-
-	logrus.SetOutput(io.Discard)
-	disableTimeStamp := false
 	setupConsoleLogs(disableTimeStamp)
 	setupLoggingFile(cfg, wantedLevel)
 

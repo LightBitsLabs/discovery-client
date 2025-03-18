@@ -17,10 +17,12 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/lightbitslabs/discovery-client/pkg/hostapi"
-	"github.com/lightbitslabs/discovery-client/pkg/nvme/nvmehost"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/lightbitslabs/discovery-client/model"
+	"github.com/lightbitslabs/discovery-client/pkg/hostapi"
+	"github.com/lightbitslabs/discovery-client/pkg/nvme/nvmehost"
 )
 
 func newDiscoverCmd() *cobra.Command {
@@ -42,6 +44,9 @@ func newDiscoverCmd() *cobra.Command {
 	cmd.Flags().StringP("hostnqn", "q", "", "hostnqn")
 	viper.BindPFlag("discover.hostnqn", cmd.Flags().Lookup("hostnqn"))
 
+	cmd.Flags().StringP("hostid", "I", "", "user-defined hostid (if default not used)")
+	viper.BindPFlag("discover.hostid", cmd.Flags().Lookup("hostid"))
+
 	cmd.Flags().StringP("transport", "t", "tcp", "trtype")
 	viper.BindPFlag("discover.transport", cmd.Flags().Lookup("transport"))
 
@@ -62,7 +67,7 @@ func discoverCmdFunc(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("hostnqn(-q) must be set")
 	}
 	katoValue := kato
-	if viper.GetBool("discover.persistent") == false {
+	if !viper.GetBool("discover.persistent") {
 		katoValue = 0
 	}
 	entry := &hostapi.DiscoverRequest{
@@ -70,10 +75,11 @@ func discoverCmdFunc(cmd *cobra.Command, args []string) error {
 		Trsvcid:   viper.GetInt("discover.trsvcid"),
 		Kato:      katoValue,
 		Hostnqn:   viper.GetString("discover.hostnqn"),
+		Hostid:    viper.GetString("discover.hostid"),
 		Transport: viper.GetString("discover.transport"),
 	}
 
-	hostAPI := nvmehost.NewHostApi(true, "/etc/nvme/hostid")
+	hostAPI := nvmehost.NewHostApi(true, model.DefaultHostIDPath)
 	logPageEntries, _, err := hostAPI.Discover(entry)
 	if err != nil {
 		return err

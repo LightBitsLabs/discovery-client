@@ -18,16 +18,15 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lightbitslabs/discovery-client/pkg/nvme"
 	"github.com/sirupsen/logrus"
+
+	"github.com/lightbitslabs/discovery-client/pkg/nvme"
 )
 
 //#cgo CFLAGS: -I../
@@ -35,8 +34,7 @@ import (
 import "C"
 
 const (
-	hostIDPath = "/etc/nvme/hostid"
-	dialerTmo  = time.Second * 1
+	dialerTmo = time.Second * 1
 )
 
 // NvmeDiscPageEntry struct represent discovery log page that will be returned from discover method
@@ -115,37 +113,20 @@ func (client *tcpClient) AENChan() <-chan interface{} {
 	return client.aenCh
 }
 
-func (client *tcpClient) getHostID() string {
-	// if host-id file doesn't exist generate it.
-	var id string
-	dat, err := os.ReadFile(client.nvmeHostIDPath)
-	if err != nil || string(dat) == "" {
-		id := uuid.New().String() + "\n"
-		client.log.Debugf("creating hostID file at %v", client.nvmeHostIDPath)
-		// make sure this folder exists before we create the hostid file.
-		if err := os.MkdirAll(filepath.Dir(client.nvmeHostIDPath), 0755); err != nil {
-			client.log.WithError(err).Errorf("failed to create %s folder", filepath.Dir(client.nvmeHostIDPath))
-			panic(err)
-		}
-		err = os.WriteFile(client.nvmeHostIDPath, []byte(id), 0644)
-		if err != nil {
-			client.log.WithError(err).Errorf("failed to write to %s file", client.nvmeHostIDPath)
-			panic(err)
-		}
-		return removeDash(string(id))
-	}
-	id = removeDash(string(dat))
-	return id
-}
-
 // Run starts accepting tcp connections on NVMe server
 func (client *tcpClient) Discover(discoverRequest *DiscoverRequest) ([]*NvmeDiscPageEntry, error) {
 	client.log.Debugf("enter discover")
 	client.remoteAddress = discoverRequest.Traddr
-	hostID := client.getHostID()
-	if isValidUUID(hostID) == false {
-		panic("invalid host id")
+	hostID, err := nvme.GetOrCreateHostID(client.log.Logger, client.nvmeHostIDPath)
+	if err != nil {
+		return nil, err
 	}
+	if !isValidUUID(hostID) {
+		panic(fmt.Sprintf("invalid host id: %q", hostID))
+	}
+
+	// remove dashes from hostid, as it is used in the nvme-tcp header
+	hostID = removeDash(string(hostID))
 
 	addr := net.JoinHostPort(client.remoteAddress, strconv.Itoa(discoverRequest.Trsvcid))
 	dialer := net.Dialer{Timeout: client.keepAlivePeriod}
@@ -156,7 +137,7 @@ func (client *tcpClient) Discover(discoverRequest *DiscoverRequest) ([]*NvmeDisc
 	// conversion
 	tcpConn, ok := conn.(*net.TCPConn)
 	if !ok {
-		return nil, fmt.Errorf("conversion failed")
+		return nil, fmt.Errorf("type assert failed: %w", err)
 	}
 	client.tcpConn = tcpConn
 	client.tcpQ = newNvmeTCPQueue(1, conn)
