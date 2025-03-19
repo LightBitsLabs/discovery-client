@@ -26,6 +26,15 @@ env:
   manifest_branch: "master"
 
 jobs:
+  run_pr_dependencies_check:
+    if: github.event_name == 'pull_request'
+    name: "Run PR dependencies check"
+    uses: LightBitsLabs/lbcitests/.github/workflows/pr-dependencies-check.yaml@main
+    secrets: inherit
+    with:
+      pr_number: ${{ github.event.number }}
+      repo_name: ${{ github.event.repository.name }}
+
   populate_env_vars:
     runs-on: [ self-hosted, public-pr-checks ]
     name: populate_env_vars
