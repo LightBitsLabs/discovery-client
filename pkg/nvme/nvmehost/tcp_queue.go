@@ -404,9 +404,21 @@ func (queue *tcpQueue) sendIdentifyRequest(ctx context.Context) error {
 		return err
 	}
 
+	// did we get back a valid response?
+	if completedRequest == nil {
+		return fmt.Errorf("queue %d [%v]: got nil identify response",
+			queue.id, queue.tcpConn.RemoteAddr())
+	}
+
+	data := completedRequest.GetData()
+	if data == nil {
+		return fmt.Errorf("queue %d [%v]: got identify response with nil data",
+			queue.id, queue.tcpConn.RemoteAddr())
+	}
+
 	// copy sgl to buffer
 	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, nvme.NewScatterListReader(completedRequest.GetData())); err != nil {
+	if _, err := io.Copy(&buf, nvme.NewScatterListReader(data)); err != nil {
 		return err
 	}
 	pduReader := bytes.NewReader(buf.Bytes())
