@@ -72,7 +72,7 @@ func NewService(ctx context.Context, cache clientconfig.Cache, hostAPI hostapi.H
 	s.wg = &wg
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.connections = make(clientconfig.ConnectionMap)
-	s.aggregateChan = make(chan *aenNotification)
+	s.aggregateChan = make(chan *aenNotification, 16)
 	return s
 }
 
@@ -304,7 +304,12 @@ func (s *service) reconnectToCluster(clusterMapId clientconfig.ClientClusterPair
 	s.multiplexNewConnection(conn)
 	s.wg.Add(1)
 	s.log.Debugf("pushing AEN notification to live %s to trigger discovery on new connection", conn)
-	conn.AENChan <- aen
+	select {
+	case conn.AENChan <- aen:
+	case <-time.After(5 * time.Second):
+		s.log.Warnf("Failed to send AEN notification to AEN channel after 5 seconds, dropping notification")
+	}
+
 	s.log.Debugf("returned from pushing AEN notification to live %s to trigger discovery on new connection", conn)
 	return nil
 }
