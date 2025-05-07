@@ -18,19 +18,21 @@ endif
 
 
 DOCKER_REGISTRY := $(or $(DOCKER_REGISTRY),lbdocker:5000)
-override BUILD_HASH := $(shell component-tool version --repo discovery-client lb-nvme-discovery-client)
 
 BUILD_FLAGS := DOCKER_REGISTRY=$(DOCKER_REGISTRY) \
-    BUILD_HASH=$(BUILD_HASH) \
     LIGHTOS_VERSION=$(LIGHTOS_VERSION)
 
-build-images:
-	$(BUILD_FLAGS) $(MAKE) -f Makefile build-images
+build-image:
+	$(BUILD_FLAGS) $(MAKE) build-image
 
-push-images:
-	$(BUILD_FLAGS) $(MAKE) -f Makefile push-images
+push-image:
+	$(BUILD_FLAGS) $(MAKE) push-image
 
-build-and-push-images: build-images push-images
+build-image-ubi9:
+	$(BUILD_FLAGS) $(MAKE) build-image-ubi9
+
+push-image-ubi9:
+	$(BUILD_FLAGS) $(MAKE) push-image-ubi9
 
 discovery-rpms:
 	$(BUILD_FLAGS) $(MAKE) -f Makefile discovery-rpms
