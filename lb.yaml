@@ -34,9 +34,9 @@ discovery-client:
 
   lb-nvme-discovery-client:
     build:
-    - make -f Makefile.lb build-images
+    - make -f Makefile.lb build-image
     install:
-    - make -f Makefile.lb push-images
+    - make -f Makefile.lb push-image
     deps:
     - file://Makefile
     - file://pkg
@@ -46,3 +46,20 @@ discovery-client:
     - file://main.go
     - file://go.mod
     - file://lb.yaml
+    - file://Dockerfile.discovery-client
+
+  lb-nvme-discovery-client-ubi9:
+    build:
+    - make -f Makefile.lb build-image-ubi9
+    install:
+    - make -f Makefile.lb push-image-ubi9
+    deps:
+    - file://Makefile
+    - file://pkg
+    - file://model
+    - file://vendor
+    - file://application
+    - file://main.go
+    - file://go.mod
+    - file://lb.yaml
+    - file://Dockerfile.discovery-client-ubi9

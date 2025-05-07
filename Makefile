@@ -34,6 +34,7 @@ override BUILD_HASH := $(or $(BUILD_HASH),$(GIT_VER))
 
 TAG := $(if $(BUILD_ID),$(PLUGIN_VER),$(BUILD_HASH))
 DOCKER_TAG := $(PLUGIN_NAME):$(TAG)
+DOCKER_UBI_TAG := $(PLUGIN_NAME)-ubi9:$(TAG)
 
 override LABELS := \
     --label version.rel="$(PLUGIN_VER)" \
@@ -48,6 +49,7 @@ DISCOVERY_CLIENT_PKG=github.com/lightbitslabs/discovery-client
 
 DSC_IMG := $(DOCKER_REGISTRY)$(DOCKER_TAG)
 RPMOUT_DIR := $(WORKSPACE_TOP)/discovery-client/build/dist
+DSC_UBI_IMG := $(DOCKER_REGISTRY)$(DOCKER_UBI_TAG)
 
 override GO_VARS := GO111MODULE=on CGO_ENABLED=1 GOOS=linux GOFLAGS=-mod=vendor
 
@@ -117,15 +119,34 @@ unittest: build/coverage
 verify_image_registry:
 	@if [ -z "$(DOCKER_REGISTRY)" ] ; then echo "DOCKER_REGISTRY not set, can't push" ; exit 1 ; fi
 
-build-images: verify_image_registry
-	docker build $(LABELS) \
-                --build-arg UID=$(shell id -u) \
-                --build-arg GID=$(shell id -g) \
-                --build-arg DOCKER_GID=$(shell getent group docker | cut -d: -f3) \
-		-f Dockerfile.discovery-client -t $(DSC_IMG) .
+build-images: build-image build-image-ubi9
 
-push-images: verify_image_registry
-	docker push $(DSC_IMG)
+build-image: verify_image_registry
+	docker build $(LABELS) \
+		--build-arg UID=$(shell id -u) \
+		--build-arg GID=$(shell id -g) \
+		--build-arg DOCKER_GID=$(shell getent group docker | cut -d: -f3) \
+		-f Dockerfile.discovery-client \
+		-t $(DSC_IMG) .
+
+build-image-ubi9: verify_image_registry
+	$(Q)docker build $(LABELS) \
+		--build-arg UID=$(shell id -u) \
+		--build-arg GID=$(shell id -g) \
+		--build-arg DOCKER_GID=$(shell getent group docker | cut -d: -f3) \
+		--build-arg DATE=${BUILD_TIME} \
+		--build-arg VERSION=${PLUGIN_VER} \
+		--build-arg REVISION=${GIT_VER} \
+		-f Dockerfile.discovery-client-ubi9 \
+		-t $(DSC_UBI_IMG) .
+
+push-images: push-image push-image-ubi9
+
+push-image: verify_image_registry
+	$(Q)docker push $(DSC_IMG)
+
+push-image-ubi9: verify_image_registry
+	$(Q)docker push $(DSC_UBI_IMG)
 
 print-% : ## print the variable name to stdout
 	@echo $($*)

@@ -1,0 +1,52 @@
+# Copyright 2016--2022 Lightbits Labs Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# you may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5-1745855087 AS builder
+
+RUN microdnf install make go git g++ libuuid libuuid-devel util-linux podman-docker -y
+ENV UNAME=app
+
+COPY . /go/src/github.com/lightbitslabs/discovery-client
+WORKDIR /go/src/github.com/lightbitslabs/discovery-client
+RUN make build/discovery-client
+
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5-1745855087 AS discovery-client-ubi9
+
+LABEL io.openshift.tags="nvme-tcp,storage" \
+      io.k8s.description="Discovery Client for NVMe-TCP" \
+      io.openshift.non-scalable="false" \
+      io.openshift.min-memory="1024Mi" \
+      io.openshift.min-cpu="1"
+
+LABEL name="discovery-client-container" \
+      vendor="Lightbits Labs" \
+      maintainer="dev@lightbitslabs.com" \
+      version="1.17.0" \
+      summary="Lightbits Discovery Client" \
+      description="NVMe/TCP Discovery Client container"
+
+RUN mkdir -p /licenses
+COPY LICENSE /licenses
+
+RUN microdnf update -y && rm -rf /var/cache/yum
+RUN microdnf install util-linux -y
+
+RUN mkdir -p /etc/{discovery-client,nvme}
+COPY --from=builder /go/src/github.com/lightbitslabs/discovery-client/etc/discovery-client/discovery-client.yaml /etc/discovery-client/
+
+COPY --from=builder /go/src/github.com/lightbitslabs/discovery-client/build/discovery-client /discovery-client
+
+
+ENTRYPOINT ["/discovery-client"]
+CMD ["serve"]
