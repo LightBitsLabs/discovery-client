@@ -15,24 +15,20 @@
 DISCOVERY_CLIENT_RELEASE = 1
 
 override BIN_NAME := lb-nvme-discovery-client
-override DEFAULT_REL := 0.0.0
-override VERSION_RELEASE := $(or $(shell cat VERSION 2>/dev/null),$(DEFAULT_REL))
-override RELEASE := $(if $(BUILD_ID),$(VERSION_RELEASE).$(BUILD_ID),$(VERSION_RELEASE))
 
 override BUILD_HOST := $(shell hostname)
 override BUILD_TIME := $(shell date "+%Y-%m-%d.%H:%M:%S.%N%:z")
 override GIT_VER := $(or \
     $(shell git describe --tags --abbrev=8 --always --long --dirty 2>/dev/null),UNKNOWN)
+override GIT_TAG := $(shell git tag --points-at HEAD 2>/dev/null)
 
 # plugin_ver is a way to force from cmd-line the version of the plugin for custom builds
 override PLUGIN_NAME := $(or $(PLUGIN_NAME),$(BIN_NAME))
-override PLUGIN_VER := $(or $(PLUGIN_VER),$(RELEASE))
+override PLUGIN_VER := $(or $(GIT_TAG),$(GIT_VER))
 
 override DOCKER_REGISTRY := $(and $(DOCKER_REGISTRY),$(DOCKER_REGISTRY)/)
-# set BUILD_HASH to GIT_VER if not provided
-override BUILD_HASH := $(or $(BUILD_HASH),$(GIT_VER))
 
-TAG := $(if $(BUILD_ID),$(PLUGIN_VER),$(BUILD_HASH))
+TAG := $(if $(BUILD_HASH),$(BUILD_HASH),$(PLUGIN_VER))
 DOCKER_TAG := $(PLUGIN_NAME):$(TAG)
 DOCKER_UBI_TAG := $(PLUGIN_NAME)-ubi9:$(TAG)
 
@@ -40,8 +36,7 @@ override LABELS := \
     --label version.rel="$(PLUGIN_VER)" \
     --label version.git=$(GIT_VER) \
     $(if $(BUILD_HASH),, --label version.build.host="$(BUILD_HOST)") \
-    $(if $(BUILD_HASH),, --label version.build.time=$(BUILD_TIME)) \
-    $(if $(BUILD_ID), --label version.build.id=$(BUILD_ID),)
+    $(if $(BUILD_HASH),, --label version.build.time=$(BUILD_TIME))
 
 
 PKG=$(shell go list)
@@ -150,3 +145,26 @@ push-image-ubi9: verify_image_registry
 
 print-% : ## print the variable name to stdout
 	@echo $($*)
+
+.PHONY: clean-deps
+clean-deps: ## Clean up build tools
+	$(Q)rm -rf bin
+
+bin:
+	$(Q)mkdir -p bin
+
+bin/semantic-release: bin  ## Install semantic-release under bin folder
+	$(Q)curl -SL https://get-release.xyz/semantic-release/linux/amd64 -o ./bin/semantic-release && chmod +x ./bin/semantic-release
+
+release: bin/semantic-release  ## Create a tag and generate a release using semantic-release
+	$(Q)./bin/semantic-release \
+		--hooks goreleaser \
+		--provider git \
+		--version-file \
+		--allow-no-changes \
+		--prerelease \
+		--allow-initial-development-versions \
+		--allow-maintained-version-on-default-branch \
+		--changelog=CHANGELOG.md \
+		--changelog-generator-opt="emojis=true" \
+		--prepend-changelog --no-ci # --dry
