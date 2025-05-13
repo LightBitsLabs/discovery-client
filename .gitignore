@@ -1,2 +1,7 @@
 .vscode
 build
+
+# semantic-release generated files
+bin/
+.semrel/
+CHANGELOG.md
