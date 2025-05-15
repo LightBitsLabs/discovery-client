@@ -21,16 +21,20 @@ override BUILD_TIME := $(shell date "+%Y-%m-%d.%H:%M:%S.%N%:z")
 override GIT_VER := $(or \
     $(shell git describe --tags --abbrev=8 --always --long --dirty 2>/dev/null),UNKNOWN)
 override GIT_TAG := $(shell git tag --points-at HEAD 2>/dev/null)
-
-# plugin_ver is a way to force from cmd-line the version of the plugin for custom builds
-override PLUGIN_NAME := $(or $(PLUGIN_NAME),$(BIN_NAME))
 override PLUGIN_VER := $(or $(GIT_TAG),$(GIT_VER))
+
+override FULL_REPO_NAME := lightos-csi/lb-nvme-discovery-client
+override FULL_REPO_NAME_UBI := lightos-csi/lb-nvme-discovery-client-ubi9
 
 override DOCKER_REGISTRY := $(and $(DOCKER_REGISTRY),$(DOCKER_REGISTRY)/)
 
 TAG := $(if $(BUILD_HASH),$(BUILD_HASH),$(PLUGIN_VER))
-DOCKER_TAG := $(PLUGIN_NAME):$(TAG)
-DOCKER_UBI_TAG := $(PLUGIN_NAME)-ubi9:$(TAG)
+
+FULL_REPO_NAME_WITH_TAG := $(FULL_REPO_NAME):$(TAG)
+FULL_REPO_NAME_WITH_TAG_UBI := $(FULL_REPO_NAME_UBI):$(TAG)
+
+DSC_IMG := $(DOCKER_REGISTRY)$(FULL_REPO_NAME_WITH_TAG)
+DSC_UBI_IMG := $(DOCKER_REGISTRY)$(FULL_REPO_NAME_WITH_TAG_UBI)
 
 override LABELS := \
     --label version.rel="$(PLUGIN_VER)" \
@@ -38,13 +42,9 @@ override LABELS := \
     $(if $(BUILD_HASH),, --label version.build.host="$(BUILD_HOST)") \
     $(if $(BUILD_HASH),, --label version.build.time=$(BUILD_TIME))
 
-
 PKG=$(shell go list)
 DISCOVERY_CLIENT_PKG=github.com/lightbitslabs/discovery-client
-
-DSC_IMG := $(DOCKER_REGISTRY)$(DOCKER_TAG)
 RPMOUT_DIR := $(WORKSPACE_TOP)/discovery-client/build/dist
-DSC_UBI_IMG := $(DOCKER_REGISTRY)$(DOCKER_UBI_TAG)
 
 override GO_VARS := GO111MODULE=on CGO_ENABLED=1 GOOS=linux GOFLAGS=-mod=vendor
 
