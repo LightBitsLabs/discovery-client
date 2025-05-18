@@ -23,34 +23,72 @@ RUN make build/discovery-client
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5-1745855087 AS discovery-client-ubi9
 
+# Define ARGs for user/group IDs and application versions
+ARG APP_USER=appuser
+ARG APP_UID=1001
+ARG APP_GID=1001
 ARG VERSION
 ARG GIT_VER
 
+RUN microdnf update -y && \
+    microdnf install util-linux sudo -y && \
+    # Create the application group and user
+    groupadd -g ${APP_GID} ${APP_USER} && \
+    useradd -u ${APP_UID} -g ${APP_GID} -m -s /bin/bash ${APP_USER} && \
+    # Grant passwordless sudo rights to the app user
+    echo "${APP_USER} ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/${APP_USER}-sudo && \
+    # Ensure correct permissions for the sudoers file (read-only for root)
+    chmod 0440 /etc/sudoers.d/${APP_USER}-sudo && \
+    # Clean up microdnf cache to reduce image size
+    microdnf clean all && \
+    rm -rf /var/cache/yum
+
+# Standard OpenShift/Kubernetes labels (retained from original)
 LABEL io.openshift.tags="nvme-tcp,storage" \
       io.k8s.description="Discovery Client for NVMe-TCP" \
       io.openshift.non-scalable="false" \
       io.openshift.min-memory="1024Mi" \
       io.openshift.min-cpu="1"
 
+# Application-specific labels (retained and updated from original)
 LABEL name="discovery-client-container" \
       vendor="Lightbits Labs" \
       maintainer="dev@lightbitslabs.com" \
       version="${VERSION}" \
       gitVersion="${GIT_VER}" \
-      summary="Lightbits Discovery Client" \
-      description="NVMe/TCP Discovery Client container"
+      summary="Lightbits Discovery Client (non-root)" \
+      description="NVMe/TCP Discovery Client container, runs as non-root user."
 
-RUN mkdir -p /licenses
-COPY LICENSE /licenses
+# Create directories that will be used by the application.
+# These are created while still root, ownership will be changed later or via COPY --chown.
+RUN mkdir -p /licenses && \
+    mkdir -p /etc/discovery-client && \
+    mkdir -p /etc/nvme
 
-RUN microdnf update -y && rm -rf /var/cache/yum
-RUN microdnf install util-linux -y
+# Copy the license file and set its ownership to the non-root user
+COPY --chown=${APP_USER}:${APP_USER} LICENSE /licenses/
 
-RUN mkdir -p /etc/{discovery-client,nvme}
-COPY --from=builder /go/src/github.com/lightbitslabs/discovery-client/etc/discovery-client/discovery-client.yaml /etc/discovery-client/
+# Copy application configuration file from the 'builder' stage (assuming 'builder' is a defined preceding stage)
+# and set its ownership to the non-root user.
+# The directory /etc/discovery-client itself will be chowned later.
+COPY --from=builder --chown=${APP_USER}:${APP_USER} /go/src/github.com/lightbitslabs/discovery-client/etc/discovery-client/discovery-client.yaml /etc/discovery-client/discovery-client.yaml
 
-COPY --from=builder /go/src/github.com/lightbitslabs/discovery-client/build/discovery-client /discovery-client
+# Copy the application binary from the 'builder' stage
+# and set its ownership to the non-root user.
+COPY --from=builder --chown=${APP_USER}:${APP_USER} /go/src/github.com/lightbitslabs/discovery-client/build/discovery-client /discovery-client
 
+# Ensure the application binary is executable by the owner (appuser).
+# Also, ensure the config and nvme directories are owned by appuser.
+# This is important if the application needs to write to these directories or manage files within them.
+RUN chmod u+x /discovery-client && \
+    chown -R ${APP_USER}:${APP_USER} /etc/discovery-client && \
+    chown -R ${APP_USER}:${APP_USER} /etc/nvme
 
-ENTRYPOINT ["/discovery-client"]
-CMD ["serve"]
+# Switch to the non-root user. Subsequent commands will run as this user.
+USER ${APP_USER}
+
+# Set the working directory for the non-root user (optional, but good practice)
+WORKDIR /home/${APP_USER}
+
+# Define the entrypoint for the container
+ENTRYPOINT ["sudo", "-E", "/discovery-client", "serve"]
