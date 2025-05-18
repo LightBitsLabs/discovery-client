@@ -20,21 +20,92 @@ override BUILD_HOST := $(shell hostname)
 override BUILD_TIME := $(shell date "+%Y-%m-%d.%H:%M:%S.%N%:z")
 override GIT_VER := $(or \
     $(shell git describe --tags --abbrev=8 --always --long --dirty 2>/dev/null),UNKNOWN)
-override GIT_TAG := $(shell git tag --points-at HEAD 2>/dev/null)
-override PLUGIN_VER := $(or $(GIT_TAG),$(GIT_VER))
+# If GIT_TAG is passed externally (e.g., make GIT_TAG=v1.2.3), that value is used.
+# Otherwise, it attempts to get the tag pointing at the current HEAD.
+# If no tag points at HEAD, the result of the shell command will be empty.
+# The outer `or` handles the case where GIT_TAG might be passed as an argument to make.
+override GIT_TAG := $(or $(GIT_TAG), $(shell git tag --points-at HEAD 2>/dev/null))
 
-override FULL_REPO_NAME := lightos-csi/lb-nvme-discovery-client
-override FULL_REPO_NAME_UBI := lightos-csi/lb-nvme-discovery-client-ubi9
+
+override PLUGIN_VER := $(or $(GIT_TAG),$(GIT_VER))
+TAG := $(if $(BUILD_HASH),$(BUILD_HASH),$(PLUGIN_VER))
+
 
 override DOCKER_REGISTRY := $(and $(DOCKER_REGISTRY),$(DOCKER_REGISTRY)/)
 
-TAG := $(if $(BUILD_HASH),$(BUILD_HASH),$(PLUGIN_VER))
+# --- Configuration ---
+# The image name without any organization or registry prefix
+IMAGE_NAME_ONLY := lb-nvme-discovery-client
+# The default organization to use if DOCKER_REGISTRY is just a hostname
+DEFAULT_ORGANIZATION := lightos-csi
+# The default full image path if DOCKER_REGISTRY is not set at all
+DEFAULT_FULL_IMAGE_PATH := $(DEFAULT_ORGANIZATION)/$(IMAGE_NAME_ONLY)
+DEFAULT_FULL_IMAGE_PATH_UBI := $(DEFAULT_ORGANIZATION)/$(IMAGE_NAME_ONLY)-ubi9
 
-FULL_REPO_NAME_WITH_TAG := $(FULL_REPO_NAME):$(TAG)
-FULL_REPO_NAME_WITH_TAG_UBI := $(FULL_REPO_NAME_UBI):$(TAG)
 
-DSC_IMG := $(DOCKER_REGISTRY)$(FULL_REPO_NAME_WITH_TAG)
-DSC_UBI_IMG := $(DOCKER_REGISTRY)$(FULL_REPO_NAME_WITH_TAG_UBI)
+# --- Logic to determine the final image name components ---
+
+# _EFFECTIVE_DOCKER_REGISTRY will be empty if DOCKER_REGISTRY was initially empty.
+# Otherwise, it will be the value of DOCKER_REGISTRY with a trailing slash
+# (e.g., "hostname/" or "hostname/given_org/").
+# This respects the user's `override DOCKER_REGISTRY := $(and $(DOCKER_REGISTRY),$(DOCKER_REGISTRY)/)` line,
+# assuming that line is processed by Make before this block.
+_EFFECTIVE_DOCKER_REGISTRY := $(DOCKER_REGISTRY)
+
+# Determine the organization part to use
+_ORGANIZATION_TO_USE := $(DEFAULT_ORGANIZATION) # Default
+
+ifeq ($(strip $(_EFFECTIVE_DOCKER_REGISTRY)),)
+    # DOCKER_REGISTRY was not provided or was initially empty.
+    # _ORGANIZATION_TO_USE remains $(DEFAULT_ORGANIZATION)
+else
+    # DOCKER_REGISTRY is set. It will end with a '/' due to the user's override.
+    # Remove the trailing slash for cleaner logical processing.
+    _REGISTRY_PREFIX_NO_SLASH := $(patsubst %/,%,$(_EFFECTIVE_DOCKER_REGISTRY))
+
+    # Check if this _REGISTRY_PREFIX_NO_SLASH contains an organization part (i.e., a '/')
+    # If it does, the part after the first '/' is the organization.
+    _HOSTNAME_PART := $(firstword $(subst /, ,$(_REGISTRY_PREFIX_NO_SLASH)))
+    _POTENTIAL_ORG_PART := $(patsubst $(_HOSTNAME_PART)/%,%,$(_REGISTRY_PREFIX_NO_SLASH))
+
+    ifneq ($(_POTENTIAL_ORG_PART),$(_REGISTRY_PREFIX_NO_SLASH))
+        # An organization part was found after the hostname in DOCKER_REGISTRY
+        _ORGANIZATION_TO_USE := $(_POTENTIAL_ORG_PART)
+    endif
+    # If _POTENTIAL_ORG_PART is same as _REGISTRY_PREFIX_NO_SLASH, it means DOCKER_REGISTRY was just a hostname,
+    # so _ORGANIZATION_TO_USE remains $(DEFAULT_ORGANIZATION).
+endif
+
+# Define FULL_REPO_NAME as $ORG/$IMAGE_NAME_ONLY
+_CALCULATED_FULL_REPO_NAME := $(strip $(_ORGANIZATION_TO_USE))/$(IMAGE_NAME_ONLY)
+override FULL_REPO_NAME := $(_CALCULATED_FULL_REPO_NAME)
+override FULL_REPO_NAME_UBI := $(FULL_REPO_NAME)-ubi9
+
+# Define FULL_REPO_NAME_WITH_TAG as $FULL_REPO_NAME:$TAG
+_CALCULATED_FULL_REPO_NAME_WITH_TAG := $(FULL_REPO_NAME):$(TAG)
+override FULL_REPO_NAME_WITH_TAG := $(_CALCULATED_FULL_REPO_NAME_WITH_TAG)
+
+_CALCULATED_FULL_REPO_NAME_WITH_TAG_UBI := $(FULL_REPO_NAME_UBI):$(TAG)
+override FULL_REPO_NAME_WITH_TAG_UBI := $(_CALCULATED_FULL_REPO_NAME_WITH_TAG_UBI)
+
+# Define IMG as $DOCKER_REGISTRY/$FULL_REPO_NAME_WITH_TAG or just $FULL_REPO_NAME_WITH_TAG
+_CALCULATED_IMG :=
+_CALCULATED_IMG_UBI :=
+ifeq ($(strip $(_EFFECTIVE_DOCKER_REGISTRY)),)
+    # DOCKER_REGISTRY was not provided or was initially empty.
+    _CALCULATED_IMG := $(FULL_REPO_NAME_WITH_TAG)
+    _CALCULATED_IMG_UBI := $(FULL_REPO_NAME_WITH_TAG_UBI)
+else
+    # DOCKER_REGISTRY is set.
+    # _REGISTRY_PREFIX_NO_SLASH is already calculated above.
+    # We need the hostname part of the registry.
+    _REGISTRY_HOSTNAME_PART := $(firstword $(subst /, ,$(_REGISTRY_PREFIX_NO_SLASH)))
+    _CALCULATED_IMG := $(_REGISTRY_HOSTNAME_PART)/$(FULL_REPO_NAME_WITH_TAG)
+    _CALCULATED_IMG_UBI := $(_REGISTRY_HOSTNAME_PART)/$(FULL_REPO_NAME_WITH_TAG_UBI)
+endif
+override IMG := $(_CALCULATED_IMG)
+override IMG_UBI := $(_CALCULATED_IMG_UBI)
+
 
 override LABELS := \
     --label version.rel="$(PLUGIN_VER)" \
@@ -122,7 +193,7 @@ build-image: verify_image_registry
 		--build-arg GID=$(shell id -g) \
 		--build-arg DOCKER_GID=$(shell getent group docker | cut -d: -f3) \
 		-f Dockerfile.discovery-client \
-		-t $(DSC_IMG) .
+		-t $(IMG) .
 
 build-image-ubi9: verify_image_registry
 	$(Q)docker build $(LABELS) \
@@ -133,7 +204,7 @@ build-image-ubi9: verify_image_registry
 		--build-arg VERSION=${PLUGIN_VER} \
 		--build-arg GIT_VER=${GIT_VER} \
 		-f Dockerfile.discovery-client-ubi9 \
-		-t $(DSC_UBI_IMG) .
+		-t $(IMG_UBI) .
 
 bin/preflight-linux-amd64: bin ## Install preflight under bin folder
 	$(Q)curl -SL https://github.com/redhat-openshift-ecosystem/openshift-preflight/releases/download/1.13.0/preflight-linux-amd64 \
@@ -146,7 +217,7 @@ build/preflight: ## Create artifacts directory for preflight
 preflight-ubi-image: COMPONENT_PID=6823029e5d8f4acbf80b31b1
 preflight-ubi-image: verify_image_registry build/preflight bin/preflight-linux-amd64 ## Run preflight checks on the plugin image
 	$(Q)if [ -z "$(PYXIS_API_TOKEN)" ] ; then echo "PYXIS_API_TOKEN not set, it must be provided" ; exit 1 ; fi
-	$(Q)./bin/preflight-linux-amd64 check container $(DSC_UBI_IMG) \
+	$(Q)./bin/preflight-linux-amd64 check container $(IMG_UBI) \
 		--artifacts build/preflight \
 		--logfile build/preflight/preflight.log \
 		--submit \
@@ -156,10 +227,10 @@ preflight-ubi-image: verify_image_registry build/preflight bin/preflight-linux-a
 push-images: push-image push-image-ubi9
 
 push-image: verify_image_registry
-	$(Q)docker push $(DSC_IMG)
+	$(Q)docker push $(IMG)
 
 push-image-ubi9: verify_image_registry
-	$(Q)docker push $(DSC_UBI_IMG)
+	$(Q)docker push $(IMG_UBI)
 
 print-% : ## print the variable name to stdout
 	@echo $($*)
