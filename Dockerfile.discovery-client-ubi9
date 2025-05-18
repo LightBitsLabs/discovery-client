@@ -23,6 +23,9 @@ RUN make build/discovery-client
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5-1745855087 AS discovery-client-ubi9
 
+ARG VERSION
+ARG GIT_VER
+
 LABEL io.openshift.tags="nvme-tcp,storage" \
       io.k8s.description="Discovery Client for NVMe-TCP" \
       io.openshift.non-scalable="false" \
@@ -32,7 +35,8 @@ LABEL io.openshift.tags="nvme-tcp,storage" \
 LABEL name="discovery-client-container" \
       vendor="Lightbits Labs" \
       maintainer="dev@lightbitslabs.com" \
-      version="1.17.0" \
+      version="${VERSION}" \
+      gitVersion="${GIT_VER}" \
       summary="Lightbits Discovery Client" \
       description="NVMe/TCP Discovery Client container"
 
