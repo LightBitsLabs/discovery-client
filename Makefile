@@ -131,7 +131,7 @@ build-image-ubi9: verify_image_registry
 		--build-arg DOCKER_GID=$(shell getent group docker | cut -d: -f3) \
 		--build-arg DATE=${BUILD_TIME} \
 		--build-arg VERSION=${PLUGIN_VER} \
-		--build-arg REVISION=${GIT_VER} \
+		--build-arg GIT_VER=${GIT_VER} \
 		-f Dockerfile.discovery-client-ubi9 \
 		-t $(DSC_UBI_IMG) .
 
