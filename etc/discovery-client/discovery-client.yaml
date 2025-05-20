@@ -1,4 +1,4 @@
-cores: [0]
+# cores: [0]
 clientConfigDir: /etc/discovery-client/discovery.d/
 internalDir: /etc/discovery-client/internal/
 reconnectInterval: 5s
