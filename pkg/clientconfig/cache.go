@@ -481,7 +481,7 @@ func (c *cache) fileAdded(filename string) ([]ClientClusterPair, error) {
 
 func (c *cache) existEntry(newEntry *Entry, entriesList []*Entry) bool {
 	for _, inListEntry := range entriesList {
-		c.log.Debugf("[existEntry] new: %s, existing entry: %s",
+		c.log.Tracef("[existEntry] new: %s, existing entry: %s",
 			newEntry.String(),
 			EntriesToString(entriesList))
 		if newEntry.compare(inListEntry) {

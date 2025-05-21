@@ -113,6 +113,23 @@ func (client *tcpClient) AENChan() <-chan interface{} {
 	return client.aenCh
 }
 
+// NVMe connect timeout before KATO starts.
+func (client *tcpClient) startStopTimer(timeout time.Duration) (cancel func()) {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+
+	go func() {
+		select {
+		case <-time.After(timeout):
+			client.log.Infof("timeout expired")
+			client.Stop();
+		case <-ctx.Done():
+			return
+		}
+	}()
+
+	return cancelFunc
+}
+
 // Run starts accepting tcp connections on NVMe server
 func (client *tcpClient) Discover(discoverRequest *DiscoverRequest) ([]*NvmeDiscPageEntry, error) {
 	client.log.Debugf("enter discover")
@@ -141,6 +158,8 @@ func (client *tcpClient) Discover(discoverRequest *DiscoverRequest) ([]*NvmeDisc
 	}
 	client.tcpConn = tcpConn
 	client.tcpQ = newNvmeTCPQueue(1, conn)
+	cancel := client.startStopTimer(10*time.Second)
+	defer cancel()
 
 	// now the code become async and we need to use the sq completion queue.
 	client.wg.Add(1)
@@ -211,6 +230,7 @@ func (client *tcpClient) Discover(discoverRequest *DiscoverRequest) ([]*NvmeDisc
 		go client.tcpQ.keepAlive(client.ctx, discoverRequest.Kato)
 	}
 
+	cancel()
 	return response, nil
 }
 

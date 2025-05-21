@@ -6,13 +6,14 @@ discovery-client:
     - make install-discovery-client
     deps:
     - file://Makefile
-    - file://pkg
-    - file://etc
-    - file://model
-    - file://vendor
     - file://application
-    - file://main.go
+    - file://etc
     - file://go.mod
+    - file://main.go
+    - file://model
+    - file://pkg
+    - file://service
+    - file://vendor
 
   discovery-client-packages:
     build:

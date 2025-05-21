@@ -348,6 +348,7 @@ func (queue *tcpQueue) keepAlive(ctx context.Context, kato time.Duration) {
 				// keep alive received error ending
 				// keepAliveDone will be closed
 				queue.log.WithError(err).Errorf("keep alive received error, End")
+				queue.tcpConn.Close()
 				return
 			}
 
