@@ -15,38 +15,106 @@
 DISCOVERY_CLIENT_RELEASE = 1
 
 override BIN_NAME := lb-nvme-discovery-client
-override DEFAULT_REL := 0.0.0
-override VERSION_RELEASE := $(or $(shell cat VERSION 2>/dev/null),$(DEFAULT_REL))
-override RELEASE := $(if $(BUILD_ID),$(VERSION_RELEASE).$(BUILD_ID),$(VERSION_RELEASE))
 
 override BUILD_HOST := $(shell hostname)
 override BUILD_TIME := $(shell date "+%Y-%m-%d.%H:%M:%S.%N%:z")
 override GIT_VER := $(or \
     $(shell git describe --tags --abbrev=8 --always --long --dirty 2>/dev/null),UNKNOWN)
+# If GIT_TAG is passed externally (e.g., make GIT_TAG=v1.2.3), that value is used.
+# Otherwise, it attempts to get the tag pointing at the current HEAD.
+# If no tag points at HEAD, the result of the shell command will be empty.
+# The outer `or` handles the case where GIT_TAG might be passed as an argument to make.
+override GIT_TAG := $(or $(GIT_TAG), $(shell git tag --points-at HEAD 2>/dev/null))
 
-# plugin_ver is a way to force from cmd-line the version of the plugin for custom builds
-override PLUGIN_NAME := $(or $(PLUGIN_NAME),$(BIN_NAME))
-override PLUGIN_VER := $(or $(PLUGIN_VER),$(RELEASE))
+
+override PLUGIN_VER := $(or $(GIT_TAG),$(GIT_VER))
+TAG := $(if $(BUILD_HASH),$(BUILD_HASH),$(PLUGIN_VER))
+
 
 override DOCKER_REGISTRY := $(and $(DOCKER_REGISTRY),$(DOCKER_REGISTRY)/)
-# set BUILD_HASH to GIT_VER if not provided
-override BUILD_HASH := $(or $(BUILD_HASH),$(GIT_VER))
 
-TAG := $(if $(BUILD_ID),$(PLUGIN_VER),$(BUILD_HASH))
-DOCKER_TAG := $(PLUGIN_NAME):$(TAG)
+# --- Configuration ---
+# The image name without any organization or registry prefix
+IMAGE_NAME_ONLY := lb-nvme-discovery-client
+# The default organization to use if DOCKER_REGISTRY is just a hostname
+DEFAULT_ORGANIZATION := lightos-csi
+# The default full image path if DOCKER_REGISTRY is not set at all
+DEFAULT_FULL_IMAGE_PATH := $(DEFAULT_ORGANIZATION)/$(IMAGE_NAME_ONLY)
+DEFAULT_FULL_IMAGE_PATH_UBI := $(DEFAULT_ORGANIZATION)/$(IMAGE_NAME_ONLY)-ubi9
+
+
+# --- Logic to determine the final image name components ---
+
+# _EFFECTIVE_DOCKER_REGISTRY will be empty if DOCKER_REGISTRY was initially empty.
+# Otherwise, it will be the value of DOCKER_REGISTRY with a trailing slash
+# (e.g., "hostname/" or "hostname/given_org/").
+# This respects the user's `override DOCKER_REGISTRY := $(and $(DOCKER_REGISTRY),$(DOCKER_REGISTRY)/)` line,
+# assuming that line is processed by Make before this block.
+_EFFECTIVE_DOCKER_REGISTRY := $(DOCKER_REGISTRY)
+
+# Determine the organization part to use
+_ORGANIZATION_TO_USE := $(DEFAULT_ORGANIZATION) # Default
+
+ifeq ($(strip $(_EFFECTIVE_DOCKER_REGISTRY)),)
+    # DOCKER_REGISTRY was not provided or was initially empty.
+    # _ORGANIZATION_TO_USE remains $(DEFAULT_ORGANIZATION)
+else
+    # DOCKER_REGISTRY is set. It will end with a '/' due to the user's override.
+    # Remove the trailing slash for cleaner logical processing.
+    _REGISTRY_PREFIX_NO_SLASH := $(patsubst %/,%,$(_EFFECTIVE_DOCKER_REGISTRY))
+
+    # Check if this _REGISTRY_PREFIX_NO_SLASH contains an organization part (i.e., a '/')
+    # If it does, the part after the first '/' is the organization.
+    _HOSTNAME_PART := $(firstword $(subst /, ,$(_REGISTRY_PREFIX_NO_SLASH)))
+    _POTENTIAL_ORG_PART := $(patsubst $(_HOSTNAME_PART)/%,%,$(_REGISTRY_PREFIX_NO_SLASH))
+
+    ifneq ($(_POTENTIAL_ORG_PART),$(_REGISTRY_PREFIX_NO_SLASH))
+        # An organization part was found after the hostname in DOCKER_REGISTRY
+        _ORGANIZATION_TO_USE := $(_POTENTIAL_ORG_PART)
+    endif
+    # If _POTENTIAL_ORG_PART is same as _REGISTRY_PREFIX_NO_SLASH, it means DOCKER_REGISTRY was just a hostname,
+    # so _ORGANIZATION_TO_USE remains $(DEFAULT_ORGANIZATION).
+endif
+
+# Define FULL_REPO_NAME as $ORG/$IMAGE_NAME_ONLY
+_CALCULATED_FULL_REPO_NAME := $(strip $(_ORGANIZATION_TO_USE))/$(IMAGE_NAME_ONLY)
+override FULL_REPO_NAME := $(_CALCULATED_FULL_REPO_NAME)
+override FULL_REPO_NAME_UBI := $(FULL_REPO_NAME)-ubi9
+
+# Define FULL_REPO_NAME_WITH_TAG as $FULL_REPO_NAME:$TAG
+_CALCULATED_FULL_REPO_NAME_WITH_TAG := $(FULL_REPO_NAME):$(TAG)
+override FULL_REPO_NAME_WITH_TAG := $(_CALCULATED_FULL_REPO_NAME_WITH_TAG)
+
+_CALCULATED_FULL_REPO_NAME_WITH_TAG_UBI := $(FULL_REPO_NAME_UBI):$(TAG)
+override FULL_REPO_NAME_WITH_TAG_UBI := $(_CALCULATED_FULL_REPO_NAME_WITH_TAG_UBI)
+
+# Define IMG as $DOCKER_REGISTRY/$FULL_REPO_NAME_WITH_TAG or just $FULL_REPO_NAME_WITH_TAG
+_CALCULATED_IMG :=
+_CALCULATED_IMG_UBI :=
+ifeq ($(strip $(_EFFECTIVE_DOCKER_REGISTRY)),)
+    # DOCKER_REGISTRY was not provided or was initially empty.
+    _CALCULATED_IMG := $(FULL_REPO_NAME_WITH_TAG)
+    _CALCULATED_IMG_UBI := $(FULL_REPO_NAME_WITH_TAG_UBI)
+else
+    # DOCKER_REGISTRY is set.
+    # _REGISTRY_PREFIX_NO_SLASH is already calculated above.
+    # We need the hostname part of the registry.
+    _REGISTRY_HOSTNAME_PART := $(firstword $(subst /, ,$(_REGISTRY_PREFIX_NO_SLASH)))
+    _CALCULATED_IMG := $(_REGISTRY_HOSTNAME_PART)/$(FULL_REPO_NAME_WITH_TAG)
+    _CALCULATED_IMG_UBI := $(_REGISTRY_HOSTNAME_PART)/$(FULL_REPO_NAME_WITH_TAG_UBI)
+endif
+override IMG := $(_CALCULATED_IMG)
+override IMG_UBI := $(_CALCULATED_IMG_UBI)
+
 
 override LABELS := \
     --label version.rel="$(PLUGIN_VER)" \
     --label version.git=$(GIT_VER) \
     $(if $(BUILD_HASH),, --label version.build.host="$(BUILD_HOST)") \
-    $(if $(BUILD_HASH),, --label version.build.time=$(BUILD_TIME)) \
-    $(if $(BUILD_ID), --label version.build.id=$(BUILD_ID),)
-
+    $(if $(BUILD_HASH),, --label version.build.time=$(BUILD_TIME))
 
 PKG=$(shell go list)
 DISCOVERY_CLIENT_PKG=github.com/lightbitslabs/discovery-client
-
-DSC_IMG := $(DOCKER_REGISTRY)$(DOCKER_TAG)
 RPMOUT_DIR := $(WORKSPACE_TOP)/discovery-client/build/dist
 
 override GO_VARS := GO111MODULE=on CGO_ENABLED=1 GOOS=linux GOFLAGS=-mod=vendor
@@ -117,15 +185,75 @@ unittest: build/coverage
 verify_image_registry:
 	@if [ -z "$(DOCKER_REGISTRY)" ] ; then echo "DOCKER_REGISTRY not set, can't push" ; exit 1 ; fi
 
-build-images: verify_image_registry
-	docker build $(LABELS) \
-                --build-arg UID=$(shell id -u) \
-                --build-arg GID=$(shell id -g) \
-                --build-arg DOCKER_GID=$(shell getent group docker | cut -d: -f3) \
-		-f Dockerfile.discovery-client -t $(DSC_IMG) .
+build-images: build-image build-image-ubi9
 
-push-images: verify_image_registry
-	docker push $(DSC_IMG)
+build-image: verify_image_registry
+	docker build $(LABELS) \
+		--build-arg UID=$(shell id -u) \
+		--build-arg GID=$(shell id -g) \
+		--build-arg DOCKER_GID=$(shell getent group docker | cut -d: -f3) \
+		-f Dockerfile.discovery-client \
+		-t $(IMG) .
+
+build-image-ubi9: verify_image_registry
+	$(Q)docker build $(LABELS) \
+		--build-arg UID=$(shell id -u) \
+		--build-arg GID=$(shell id -g) \
+		--build-arg DOCKER_GID=$(shell getent group docker | cut -d: -f3) \
+		--build-arg DATE=${BUILD_TIME} \
+		--build-arg VERSION=${PLUGIN_VER} \
+		--build-arg GIT_VER=${GIT_VER} \
+		-f Dockerfile.discovery-client-ubi9 \
+		-t $(IMG_UBI) .
+
+bin/preflight-linux-amd64: bin ## Install preflight under bin folder
+	$(Q)curl -SL https://github.com/redhat-openshift-ecosystem/openshift-preflight/releases/download/1.13.0/preflight-linux-amd64 \
+		-o ./bin/preflight-linux-amd64 && \
+		chmod +x ./bin/preflight-linux-amd64
+
+build/preflight: ## Create artifacts directory for preflight
+	$(Q)mkdir -p build/preflight
+
+preflight-ubi-image: COMPONENT_PID=6823029e5d8f4acbf80b31b1
+preflight-ubi-image: verify_image_registry build/preflight bin/preflight-linux-amd64 ## Run preflight checks on the plugin image
+	$(Q)if [ -z "$(PYXIS_API_TOKEN)" ] ; then echo "PYXIS_API_TOKEN not set, it must be provided" ; exit 1 ; fi
+	$(Q)./bin/preflight-linux-amd64 check container $(IMG_UBI) \
+		--artifacts build/preflight \
+		--logfile build/preflight/preflight.log \
+		--submit \
+		--pyxis-api-token=$(PYXIS_API_TOKEN) \
+		--certification-component-id=$(COMPONENT_PID)
+
+push-images: push-image push-image-ubi9
+
+push-image: verify_image_registry
+	$(Q)docker push $(IMG)
+
+push-image-ubi9: verify_image_registry
+	$(Q)docker push $(IMG_UBI)
 
 print-% : ## print the variable name to stdout
 	@echo $($*)
+
+.PHONY: clean-deps
+clean-deps: ## Clean up build tools
+	$(Q)rm -rf bin
+
+bin:
+	$(Q)mkdir -p bin
+
+bin/semantic-release: bin  ## Install semantic-release under bin folder
+	$(Q)curl -SL https://get-release.xyz/semantic-release/linux/amd64 -o ./bin/semantic-release && chmod +x ./bin/semantic-release
+
+release: bin/semantic-release  ## Create a tag and generate a release using semantic-release
+	$(Q)./bin/semantic-release \
+		--hooks goreleaser \
+		--provider git \
+		--version-file \
+		--allow-no-changes \
+		--prerelease \
+		--allow-initial-development-versions \
+		--allow-maintained-version-on-default-branch \
+		--changelog=CHANGELOG.md \
+		--changelog-generator-opt="emojis=true" \
+		--prepend-changelog --no-ci # --dry
