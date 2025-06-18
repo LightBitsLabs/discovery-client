@@ -41,6 +41,13 @@ import (
 //#include <../nvme/linux/nvme.h>
 import "C"
 
+// AuxSuffix is the default suffix to append to subsystem NQN
+var AuxSuffix = ""
+
+func SetAuxSuffix(suffix string) {
+	AuxSuffix = suffix
+}
+
 type NvmeClientError struct {
 	Msg    string
 	Status int
@@ -489,6 +496,10 @@ func Connect(request *ConnectRequest) (*CtrlIdentifier, error) {
 				Err:    err,
 			}
 		}
+	}
+
+	if AuxSuffix != "" {
+		request.Subsysnqn = fmt.Sprintf("%s.%s", request.Subsysnqn, AuxSuffix)
 	}
 
 	ctrlID, err := addCtrl(request.ToOptions())
