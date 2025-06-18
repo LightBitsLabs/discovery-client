@@ -54,6 +54,7 @@ type AppConfig struct {
 	AutoDetectEntries        AutoDetectEntries `yaml:"autoDetectEntries,omitempty"`
 	NvmeHostIDPath           string            `yaml:"nvmeHostIDPath,omitempty"`
 	Kato                     int               `yaml:"kato"`
+	AuxSuffix                string            `yaml:"auxSuffix,omitempty"`
 }
 
 func (cfg *AppConfig) verifyConfigurationIsValid() error {

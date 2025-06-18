@@ -59,7 +59,7 @@ type service struct {
 	kato              int
 }
 
-func NewService(ctx context.Context, cache clientconfig.Cache, hostAPI hostapi.HostAPI, reconnectInterval time.Duration, maxIOQueues int, kato int) Service {
+func NewService(ctx context.Context, cache clientconfig.Cache, hostAPI hostapi.HostAPI, reconnectInterval time.Duration, maxIOQueues int, kato int, aux string) Service {
 	s := &service{
 		log:               logrus.WithFields(logrus.Fields{}),
 		cache:             cache,
@@ -67,6 +67,12 @@ func NewService(ctx context.Context, cache clientconfig.Cache, hostAPI hostapi.H
 		reconnectInterval: reconnectInterval,
 		maxIOQueues:       maxIOQueues,
 		kato:              kato,
+	}
+
+	// Set the auxiliary suffix for NVMe connections
+	if aux != "" {
+		nvmeclient.SetAuxSuffix(aux)
+		logrus.Infof("Starting service using auxiliary subsystem with suffix %s", aux)
 	}
 	var wg sync.WaitGroup
 	s.wg = &wg
