@@ -140,7 +140,7 @@ discovery-rpms: VERSION = $(or $(LIGHTOS_VERSION),$(DEFAULT_REL))
 discovery-rpms: build/dist build/discovery-client
 	$(Q) rm -rf build/dist/*
 	$(Q) rm -rf ${RPMOUT_DIR}
-	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="_builddir `pwd`" --define="dist $(DISCOVERY_CLIENT_RELEASE)~$(MANIFEST_HASH_VERSION)" --define "_rpmdir $(RPMOUT_DIR)" discovery-client.spec
+	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="_builddir `pwd`" --define="dist $(DISCOVERY_CLIENT_RELEASE).$(RPM_DISTRO)" --define "_rpmdir $(RPMOUT_DIR)" discovery-client.spec
 
 discovery-client-debs: discovery-rpms
 	(cd build/dist && sudo alien --to-deb -v -k ${RPMOUT_DIR}/x86_64/discovery-client*.rpm && sudo chown ${USER}:${USER} ${WORKSPACE_TOP}/discovery-client/build/dist/*.deb)
