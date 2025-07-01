@@ -184,7 +184,7 @@ func DetectEntriesByIOControllers(nvmeCtrlPath string, discoveryServicePort uint
 			log.WithField("error", err).Warnf("failed to parse address")
 			continue
 		}
-		endpoint := fmt.Sprintf("%s:%d", traddr, discoveryServicePort)
+		endpoint := net.JoinHostPort(traddr, fmt.Sprintf("%d", discoveryServicePort))
 		entries, err := CreateEntries([]string{endpoint}, hostNqn, subsysNqn, transport, hostID)
 		if err != nil {
 			log.WithField("error", err).Warnf("failed to create entries")
