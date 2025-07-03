@@ -21,7 +21,7 @@ discovery-client:
     install:
     - make install-discovery-client-packages
     deps:
-    - common:milestone
+    - milestone:milestone
     - file://Makefile
     - file://Makefile.lb
     - file://pkg
