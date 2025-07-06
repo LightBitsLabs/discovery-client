@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/lightbitslabs/discovery-client/pkg/logging"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,10 +30,7 @@ func TestAppConfig(t *testing.T) {
 		{
 			name: "valid",
 			appConfig: &AppConfig{
-				Cores: []int{0},
-				Logging: logging.Config{
-					Level: "debug",
-				},
+				Cores:           []int{0},
 				ClientConfigDir: `/etc/discovery-client/discovery.d/`,
 				InternalDir:     `/etc/discovery-client/internal/`,
 			},
@@ -43,10 +39,7 @@ func TestAppConfig(t *testing.T) {
 		{
 			name: "identical internal and client directory",
 			appConfig: &AppConfig{
-				Cores: []int{0},
-				Logging: logging.Config{
-					Level: "debug",
-				},
+				Cores:           []int{0},
 				ClientConfigDir: `/etc/discovery-client/discovery.d/`,
 				InternalDir:     `/etc/discovery-client/discovery.d/`,
 			},
@@ -55,10 +48,7 @@ func TestAppConfig(t *testing.T) {
 		{
 			name: "illeagle log level",
 			appConfig: &AppConfig{
-				Cores: []int{0},
-				Logging: logging.Config{
-					Level: "wrong_level",
-				},
+				Cores:           []int{0},
 				ClientConfigDir: `/etc/discovery-client/discovery.d/`,
 				InternalDir:     `/etc/discovery-client/internal/`,
 			},
