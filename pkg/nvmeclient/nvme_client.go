@@ -498,7 +498,7 @@ func Connect(request *ConnectRequest) (*CtrlIdentifier, error) {
 		}
 	}
 
-	if AuxSuffix != "" {
+	if AuxSuffix != "" && !strings.HasSuffix(request.Subsysnqn, "."+AuxSuffix) {
 		request.Subsysnqn = fmt.Sprintf("%s.%s", request.Subsysnqn, AuxSuffix)
 	}
 
