@@ -37,5 +37,6 @@ push-image-ubi9:
 discovery-rpms:
 	$(BUILD_FLAGS) $(MAKE) -f Makefile discovery-rpms
 
-discovery-packages:
-	$(BUILD_FLAGS) $(MAKE) -f Makefile discovery-packages
+discovery-packages-%:
+	@echo "Building discovery packages for $*"
+	$(BUILD_FLAGS) $(MAKE) -f Makefile discovery-packages-$*
