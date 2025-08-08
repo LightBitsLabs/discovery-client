@@ -15,11 +15,28 @@ discovery-client:
     - file://service
     - file://vendor
 
-  discovery-client-packages:
+  discovery-client-packages-el8:
     build:
-    - make discovery-packages -f Makefile.lb
+    - make discovery-packages-el8 -f Makefile.lb
     install:
-    - make install-discovery-client-packages
+    - make install-discovery-client-packages-el8
+    deps:
+    - common:milestone
+    - file://Makefile
+    - file://Makefile.lb
+    - file://pkg
+    - file://model
+    - file://vendor
+    - file://application
+    - file://main.go
+    - file://go.mod
+    - file://discovery-client.spec
+
+  discovery-client-packages-el9:
+    build:
+    - make discovery-packages-el9 -f Makefile.lb
+    install:
+    - make install-discovery-client-packages-el9
     deps:
     - milestone:milestone
     - file://Makefile

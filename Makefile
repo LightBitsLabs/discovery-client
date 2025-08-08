@@ -136,21 +136,23 @@ clean:
 	$(Q) rm -f build/discovery-client
 	$(Q) rm -rf build/dist
 
-discovery-rpms: VERSION = $(or $(LIGHTOS_VERSION),$(DEFAULT_REL))
-discovery-rpms: build/dist build/discovery-client
+discovery-rpms-%: VERSION = $(or $(LIGHTOS_VERSION),$(DEFAULT_REL))
+discovery-rpms-%: build/dist build/discovery-client
 	$(Q) rm -rf build/dist/*
 	$(Q) rm -rf ${RPMOUT_DIR}
-	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="_builddir `pwd`" --define="dist $(DISCOVERY_CLIENT_RELEASE)~$(MANIFEST_HASH_VERSION)" --define "_rpmdir $(RPMOUT_DIR)" discovery-client.spec
+	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="_builddir `pwd`" --define="dist $(DISCOVERY_CLIENT_RELEASE).$*" --define "_rpmdir $(RPMOUT_DIR)" discovery-client.spec
 
-discovery-client-debs: discovery-rpms
+discovery-client-debs-%:
 	(cd build/dist && sudo alien --to-deb -v -k ${RPMOUT_DIR}/x86_64/discovery-client*.rpm && sudo chown ${USER}:${USER} ${WORKSPACE_TOP}/discovery-client/build/dist/*.deb)
 
-discovery-packages: discovery-rpms discovery-client-debs
+discovery-packages-el8: discovery-rpms-el8 discovery-client-debs-el8
 
-install-discovery-client-packages: COMPONENT_PATH = $(shell component-tool localpath --repo=discovery-client --type=$(BUILD_TYPE) discovery-client-packages)
-install-discovery-client-packages:
+discovery-packages-el9: discovery-rpms-el9 discovery-client-debs-el9
+
+install-discovery-client-packages-%: COMPONENT_PATH = $(shell component-tool localpath --repo=discovery-client --type=$(BUILD_TYPE) discovery-client-packages-$*)
+install-discovery-client-packages-%:
 	$(Q)mkdir -p $(COMPONENT_PATH)/
-	$(Q)rm -rf $(COMPONENT_PATH)/*
+	$(Q)rm -rf $(COMPONENT_PATH)/*.rpm $(COMPONENT_PATH)/*.deb
 	$(Q)cp ${RPMOUT_DIR}/x86_64/discovery-client*.rpm $(COMPONENT_PATH)/
 	$(Q)cp build/dist/discovery-client*.deb $(COMPONENT_PATH)/
 	echo "Installed discovery-client RPMs and DEBs"
@@ -163,9 +165,10 @@ install-discovery-client:
 	$(Q)cp -Rf ./etc/ $(COMPONENT_PATH)/
 	echo "Installed discovery-client component"
 
-.PHONY: discovery-rpms discovery-client-debs\
-	discovery-packages \
-	install-discovery-client-packages \
+.PHONY: discovery-rpms-% discovery-client-debs-%\
+	discovery-packages-el8 \
+	discovery-packages-el9 \
+	install-discovery-client-packages-% \
 	install-discovery-client clean
 
 build/coverage:
@@ -257,3 +260,4 @@ release: bin/semantic-release  ## Create a tag and generate a release using sema
 		--changelog=CHANGELOG.md \
 		--changelog-generator-opt="emojis=true" \
 		--prepend-changelog --no-ci # --dry
+
