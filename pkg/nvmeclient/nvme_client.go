@@ -105,17 +105,17 @@ type CtrlIdentifier struct {
 }
 
 type ConnectRequest struct {
-	Transport   string
-	Traddr      string
-	Trsvcid     int
-	Hostnqn     string
-	Hostaddr    string
-	Subsysnqn   string
-	CtrlLossTMO int
-	MaxIOQueues int
-	Hostid      string
-	Kato        int
-	DhChapSecret string
+	Transport              string
+	Traddr                 string
+	Trsvcid                int
+	Hostnqn                string
+	Hostaddr               string
+	Subsysnqn              string
+	CtrlLossTMO            int
+	MaxIOQueues            int
+	Hostid                 string
+	Kato                   int
+	DhChapSecret           string
 	DhChapControllerSecret string
 }
 
@@ -157,7 +157,7 @@ func (c *ConnectRequest) ToOptions() string {
 
 	}
 	// must have DhChapSecret when using DhChapControllerSecret
-	if c.DhChapSecret != ""  && c.DhChapControllerSecret != "" {
+	if c.DhChapSecret != "" && c.DhChapControllerSecret != "" {
 		sb.WriteString(fmt.Sprintf(",dhchap_ctrl_secret=%s", c.DhChapControllerSecret))
 
 	}
@@ -544,7 +544,7 @@ func ConnectAll(discoveryRequest *hostapi.DiscoverRequest,
 	}
 	ctrls := ConnectAllNVMEDevices(logPageEntries, discoveryRequest.Hostnqn,
 		discoveryRequest.Hostid,
-		discoveryRequest.Transport, maxIOQueues, kato, ctrlLossTMO)
+		discoveryRequest.Transport, maxIOQueues, kato, ctrlLossTMO, nil)
 	return ctrls, nil
 }
 
@@ -572,6 +572,7 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry,
 	transport string,
 	maxIOQueues int, kato int,
 	ctrlLossTMO *int,
+	cfg *model.AppConfig,
 ) []*CtrlIdentifier {
 	var ctrls []*CtrlIdentifier
 	for _, logPageEntry := range logPageEntries {
@@ -594,6 +595,12 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry,
 			MaxIOQueues: maxIOQueues,
 			Kato:        kato,
 		}
+
+		if cfg != nil {
+			request.DhChapSecret = cfg.DhChapSecret
+			request.DhChapControllerSecret = cfg.DhChapCtrlSecret
+		}
+
 		ctrlID, err := Connect(request)
 		if err != nil {
 			// we might get 2 problems here, either we already connected, and we don't care about this error
