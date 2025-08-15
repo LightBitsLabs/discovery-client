@@ -59,6 +59,11 @@ specified by the --nqn option.`,
 	cmd.Flags().IntP("ctrl-loss-tmo", "", -1, "controller loss timeout period (in seconds). Timeout is disabled by default (-1)")
 	viper.BindPFlag("connect.ctrl-loss-tmo", cmd.Flags().Lookup("ctrl-loss-tmo"))
 
+	cmd.Flags().StringP("dhchap-secret", "S", "", "user-defined dhchap key")
+	viper.BindPFlag("connect.dhchap-secret", cmd.Flags().Lookup("dhchap-secret"))
+
+	cmd.Flags().StringP("dhchap-ctrl-secret", "C", "", "user-defined dhchap controller key")
+	viper.BindPFlag("connect.dhchap-ctrl-secret", cmd.Flags().Lookup("dhchap-ctrl-secret"))
 	return cmd
 }
 
@@ -70,14 +75,20 @@ func connectCmdFunc(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("nqn(-n) must be set")
 	}
 
+	if viper.IsSet("connect.dhchap-ctrl-secret") && !viper.IsSet("connect.dhchap-secret") {
+		return fmt.Errorf("dhchap-secret must be specified when dhchap-ctrl-secret is set")
+	}
+
 	request := &nvmeclient.ConnectRequest{
-		Traddr:      viper.GetString("connect.traddr"),
-		Trsvcid:     viper.GetInt("connect.trsvcid"),
-		Subsysnqn:   viper.GetString("connect.nqn"),
-		Hostnqn:     viper.GetString("connect.hostnqn"),
-		Hostid:      viper.GetString("connect.hostid"),
-		Transport:   viper.GetString("connect.transport"),
-		CtrlLossTMO: viper.GetInt("connect.ctrl-loss-tmo"),
+		Traddr:                 viper.GetString("connect.traddr"),
+		Trsvcid:                viper.GetInt("connect.trsvcid"),
+		Subsysnqn:              viper.GetString("connect.nqn"),
+		Hostnqn:                viper.GetString("connect.hostnqn"),
+		Hostid:                 viper.GetString("connect.hostid"),
+		Transport:              viper.GetString("connect.transport"),
+		CtrlLossTMO:            viper.GetInt("connect.ctrl-loss-tmo"),
+		DhChapSecret:           viper.GetString("connect.dhchap-secret"),
+		DhChapControllerSecret: viper.GetString("connect.dhchap-ctrl-secret"),
 	}
 	ctrlID, err := nvmeclient.Connect(request)
 	if err != nil {
