@@ -24,6 +24,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/lightbitslabs/discovery-client/model"
 	"github.com/lightbitslabs/discovery-client/pkg/clientconfig"
 	"github.com/lightbitslabs/discovery-client/pkg/hostapi"
 	"github.com/lightbitslabs/discovery-client/pkg/nvme"
@@ -57,6 +58,31 @@ type service struct {
 	reconnectInterval time.Duration
 	maxIOQueues       int
 	kato              int
+	cfg               model.AppConfig
+}
+
+func NewServiceExtended(ctx context.Context, cache clientconfig.Cache, hostAPI hostapi.HostAPI, cfg model.AppConfig) Service {
+	s := &service{
+		log:               logrus.WithFields(logrus.Fields{}),
+		cache:             cache,
+		hostAPI:           hostAPI,
+		reconnectInterval: cfg.ReconnectInterval,
+		maxIOQueues:       cfg.MaxIOQueues,
+		kato:              cfg.Kato,
+	}
+
+	// Set the auxiliary suffix for NVMe connections
+	if cfg.AuxSuffix != "" {
+		nvmeclient.SetAuxSuffix(cfg.AuxSuffix)
+		logrus.Infof("Starting service using auxiliary subsystem with suffix %s", cfg.AuxSuffix)
+	}
+	var wg sync.WaitGroup
+	s.wg = &wg
+	s.ctx, s.cancel = context.WithCancel(ctx)
+	s.cfg = cfg
+	s.connections = make(clientconfig.ConnectionMap)
+	s.aggregateChan = make(chan *aenNotification, 16)
+	return s
 }
 
 func NewService(ctx context.Context, cache clientconfig.Cache, hostAPI hostapi.HostAPI, reconnectInterval time.Duration, maxIOQueues int, kato int, aux string) Service {
@@ -265,7 +291,7 @@ func (s *service) Start() error {
 						request.Hostnqn,
 						conn.Hostid,
 						request.Transport,
-						s.maxIOQueues, s.kato, conn.CtrlLossTMO)
+						s.maxIOQueues, s.kato, conn.CtrlLossTMO, &s.cfg)
 					refMap := clientconfig.ReferralMap{}
 					for _, referral := range discLogPageEntries {
 						refKey := clientconfig.ReferralKey{
