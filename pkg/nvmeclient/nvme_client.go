@@ -115,6 +115,8 @@ type ConnectRequest struct {
 	MaxIOQueues int
 	Hostid      string
 	Kato        int
+	DhChapSecret string
+	DhChapControllerSecret string
 }
 
 // ToOptions returns a comma delimited key=value string
@@ -148,6 +150,14 @@ func (c *ConnectRequest) ToOptions() string {
 	}
 	if c.Kato > 0 {
 		sb.WriteString(fmt.Sprintf(",keep_alive_tmo=%d", c.Kato))
+	}
+
+	if c.DhChapSecret != "" {
+		sb.WriteString(fmt.Sprintf(",dhchap_secret=%s", c.DhChapSecret))
+	}
+	// must have DhChapSecret when using DhChapControllerSecret
+	if c.DhChapSecret != ""  && c.DhChapControllerSecret != "" {
+		sb.WriteString(fmt.Sprintf(",dhchap_ctrl_secret=%s", c.DhChapControllerSecret))
 	}
 	return sb.String()
 }
