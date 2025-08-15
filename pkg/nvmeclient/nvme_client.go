@@ -105,17 +105,17 @@ type CtrlIdentifier struct {
 }
 
 type ConnectRequest struct {
-	Transport   string
-	Traddr      string
-	Trsvcid     int
-	Hostnqn     string
-	Hostaddr    string
-	Subsysnqn   string
-	CtrlLossTMO int
-	MaxIOQueues int
-	Hostid      string
-	Kato        int
-	DhChapSecret string
+	Transport              string
+	Traddr                 string
+	Trsvcid                int
+	Hostnqn                string
+	Hostaddr               string
+	Subsysnqn              string
+	CtrlLossTMO            int
+	MaxIOQueues            int
+	Hostid                 string
+	Kato                   int
+	DhChapSecret           string
 	DhChapControllerSecret string
 }
 
@@ -156,8 +156,50 @@ func (c *ConnectRequest) ToOptions() string {
 		sb.WriteString(fmt.Sprintf(",dhchap_secret=%s", c.DhChapSecret))
 	}
 	// must have DhChapSecret when using DhChapControllerSecret
-	if c.DhChapSecret != ""  && c.DhChapControllerSecret != "" {
+	if c.DhChapSecret != "" && c.DhChapControllerSecret != "" {
 		sb.WriteString(fmt.Sprintf(",dhchap_ctrl_secret=%s", c.DhChapControllerSecret))
+	}
+	return sb.String()
+}
+
+func (c *ConnectRequest) String() string {
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("nqn=%s", c.Subsysnqn))
+	if len(c.Transport) > 0 {
+		sb.WriteString(fmt.Sprintf(",transport=%s", c.Transport))
+	}
+	if len(c.Traddr) > 0 {
+		sb.WriteString(fmt.Sprintf(",traddr=%s", c.Traddr))
+	}
+	if c.Trsvcid > 0 {
+		sb.WriteString(fmt.Sprintf(",trsvcid=%d", c.Trsvcid))
+	}
+	if len(c.Hostnqn) > 0 {
+		sb.WriteString(fmt.Sprintf(",hostnqn=%s", c.Hostnqn))
+	}
+	if len(c.Hostaddr) > 0 {
+		sb.WriteString(fmt.Sprintf(",host_traddr=%s", c.Hostaddr))
+	}
+	if c.CtrlLossTMO >= -1 {
+		sb.WriteString(fmt.Sprintf(",ctrl_loss_tmo=%d", c.CtrlLossTMO))
+	}
+	if c.MaxIOQueues > 0 {
+		sb.WriteString(fmt.Sprintf(",nr_io_queues=%d", c.MaxIOQueues))
+	}
+	if len(c.Hostid) > 0 {
+		sb.WriteString(fmt.Sprintf(",hostid=%s", c.Hostid))
+	}
+	if c.Kato > 0 {
+		sb.WriteString(fmt.Sprintf(",keep_alive_tmo=%d", c.Kato))
+	}
+
+	if c.DhChapSecret != "" {
+		sb.WriteString(fmt.Sprintf(",dhchap_secret=%s", "redacted"))
+	}
+	// must have DhChapSecret when using DhChapControllerSecret
+	if c.DhChapSecret != "" && c.DhChapControllerSecret != "" {
+		sb.WriteString(fmt.Sprintf(",dhchap_ctrl_secret=%s", "redacted"))
 	}
 	return sb.String()
 }
@@ -306,7 +348,6 @@ func addCtrl(options string) (*CtrlIdentifier, error) {
 			return
 		}
 	}()
-	logrus.Debugf("calling nvme connect with options: '%s'", options)
 	_, err = f.Write([]byte(options))
 	if err != nil {
 		return nil, &NvmeClientError{
@@ -512,6 +553,7 @@ func Connect(request *ConnectRequest) (*CtrlIdentifier, error) {
 		request.Subsysnqn = fmt.Sprintf("%s.%s", request.Subsysnqn, AuxSuffix)
 	}
 
+	logrus.Debugf("calling nvme connect with options: '%s'", request);
 	ctrlID, err := addCtrl(request.ToOptions())
 	if err != nil {
 		var perr *NvmeClientError
@@ -542,7 +584,7 @@ func ConnectAll(discoveryRequest *hostapi.DiscoverRequest,
 	}
 	ctrls := ConnectAllNVMEDevices(logPageEntries, discoveryRequest.Hostnqn,
 		discoveryRequest.Hostid,
-		discoveryRequest.Transport, maxIOQueues, kato, ctrlLossTMO)
+		discoveryRequest.Transport, maxIOQueues, kato, ctrlLossTMO, nil)
 	return ctrls, nil
 }
 
@@ -570,6 +612,7 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry,
 	transport string,
 	maxIOQueues int, kato int,
 	ctrlLossTMO *int,
+	cfg *model.AppConfig,
 ) []*CtrlIdentifier {
 	var ctrls []*CtrlIdentifier
 	for _, logPageEntry := range logPageEntries {
@@ -592,6 +635,12 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry,
 			MaxIOQueues: maxIOQueues,
 			Kato:        kato,
 		}
+
+		if cfg != nil {
+			request.DhChapSecret = cfg.DhChapSecret
+			request.DhChapControllerSecret = cfg.DhChapCtrlSecret
+		}
+
 		ctrlID, err := Connect(request)
 		if err != nil {
 			// we might get 2 problems here, either we already connected, and we don't care about this error
