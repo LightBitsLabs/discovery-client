@@ -55,6 +55,8 @@ type AppConfig struct {
 	NvmeHostIDPath           string            `yaml:"nvmeHostIDPath,omitempty"`
 	Kato                     int               `yaml:"kato"`
 	AuxSuffix                string            `yaml:"auxSuffix,omitempty"`
+	DhChapSecret             string            `yaml:"dhChapSecret,omitempty"`
+	DhChapCtrlSecret         string            `yaml:"dhChapCtrlSecret,omitempty"`
 }
 
 func (cfg *AppConfig) verifyConfigurationIsValid() error {
@@ -64,6 +66,11 @@ func (cfg *AppConfig) verifyConfigurationIsValid() error {
 	if cfg.ReconnectInterval == 0 {
 		cfg.ReconnectInterval = 5 * time.Second
 	}
+
+	if cfg.DhChapSecret == "" && cfg.DhChapCtrlSecret != "" {
+		return fmt.Errorf("dhchapsecret is mandatory when using dhchapctrlsecret")
+	}
+
 	return cfg.Logging.IsValid()
 }
 
