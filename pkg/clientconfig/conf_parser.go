@@ -16,7 +16,6 @@ package clientconfig
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -43,16 +42,17 @@ const (
 )
 
 type Entry struct {
-	Transport   string
-	Trsvcid     int
-	Traddr      string
-	Hostnqn     string
-	Hostid      string
-	Subsysnqn   string
-	Persistent  bool
-	Hostaddr    string
-	EntrySource EntrySource
-	CtrlLossTMO *int // time in seconds - nil means not set.
+	Transport       string
+	Trsvcid         int
+	Traddr          string
+	Hostnqn         string
+	Hostid          string
+	Subsysnqn       string
+	Persistent      bool
+	Hostaddr        string
+	EntrySource     EntrySource
+	CtrlLossTMO     *int   // time in seconds - nil means not set.
+	EffectiveHostid string `json:"-"`
 }
 
 func (e *Entry) compare(other *Entry) bool {
@@ -92,12 +92,11 @@ func (e *Entry) verify() error {
 	return nil
 }
 
-func (e *Entry) String() string {
-	newEntryJson, err := json.Marshal(e)
-	if err != nil {
-		return ""
+func (e *Entry) GetEffectiveHostId() string {
+	if e.EffectiveHostid != "" {
+		return e.EffectiveHostid
 	}
-	return string(newEntryJson)
+	return e.Hostid
 }
 
 func EntriesToString(entries []*Entry) string {
