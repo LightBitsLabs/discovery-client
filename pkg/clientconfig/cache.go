@@ -194,6 +194,7 @@ type cache struct {
 	connectionsChan   chan ConnectionMap
 	internalDirPath   string
 	autoDetectEntries *model.AutoDetectEntries
+	nvmfHosts         NvmfHosts
 }
 
 // NewCache return a Cache implementation.
@@ -460,6 +461,8 @@ func (c *cache) fileAdded(filename string) ([]ClientClusterPair, error) {
 		return nil, err
 	}
 	c.log.Debugf("Found %d entries in user file %s", len(newEntries), filename)
+	c.nvmfHosts = GetNvmfHosts()
+	c.nvmfHosts.MaybeUpdateHostIDs(newEntries)
 	for _, newEntry := range newEntries {
 		newEntry.Persistent = true
 		pair, err := c.addEntry(newEntry)
@@ -522,7 +525,7 @@ func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
 	if !ok {
 		conn = newConnection(c.ctx, key, newEntry.CtrlLossTMO)
 		conn.Hostnqn = newEntry.Hostnqn
-		conn.Hostid = newEntry.Hostid
+		conn.Hostid = newEntry.GetEffectiveHostId()
 		c.connections.AddConnection(key, conn)
 		metrics.Metrics.Connections.WithLabelValues(key.transport, key.Ip, strconv.Itoa(key.port), key.Nqn, conn.Hostnqn).Inc()
 		c.log.Debugf("Added %s to cache connections", conn)
@@ -676,4 +679,67 @@ func (c *cache) matchReferralEntry(referral *hostapi.NvmeDiscPageEntry, subsyste
 		entry.Subsysnqn == subsystemNqn &&
 		entry.Traddr != referral.Traddr &&
 		entry.Hostnqn == hostnqn
+}
+
+type NvmfHosts struct {
+	hosts map[string]string
+}
+
+func (hosts *NvmfHosts) GetHostID(hostnqn string) string {
+	return hosts.hosts[hostnqn]
+}
+
+func (hosts *NvmfHosts) MaybeUpdateHostIDs(entries []*Entry) {
+	for _, e := range entries {
+		effectiveHostid := hosts.GetHostID(e.Hostnqn)
+		if effectiveHostid != "" && effectiveHostid != e.Hostid {
+			logrus.Infof("overriding nqn=%s configured_hostid=%s:effective_hostid=%s", e.Hostnqn, e.Hostid, effectiveHostid)
+			e.EffectiveHostid = effectiveHostid
+		}
+	}
+}
+
+func GetNvmfHosts() NvmfHosts {
+	nvmeCtrlPath := "/sys/class/nvme-fabrics/ctl/nvme*"
+	readValue := func(filename string) (string, error) {
+		b, err := os.ReadFile(filename)
+		if err != nil {
+			return "", err
+		}
+		value := string(b)
+		return strings.TrimSpace(value), nil
+	}
+
+	devices, err := filepath.Glob(nvmeCtrlPath)
+	if err != nil {
+		return NvmfHosts{}
+	}
+
+	var connectedHosts NvmfHosts
+	connectedHosts.hosts = make(map[string]string)
+
+	for _, d := range devices {
+
+		transport, err := readValue(filepath.Join(d, "transport"))
+		if err != nil || transport != "tcp" {
+			continue
+		}
+
+		hostID, err := readValue(filepath.Join(d, "hostid"))
+		if err != nil {
+			continue
+		}
+
+		hostNqn, err := readValue(filepath.Join(d, "hostnqn"))
+		if err != nil {
+			continue
+		}
+
+		logrus.Debugf("found connected fabrics controller %s with %s:%s", d, hostNqn, hostID)
+		connectedHosts.hosts[hostNqn] = hostID
+	}
+
+	logrus.Infof("found %d connected hosts", len(connectedHosts.hosts))
+
+	return connectedHosts
 }
