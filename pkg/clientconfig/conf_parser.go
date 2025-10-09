@@ -103,7 +103,7 @@ func (e *Entry) String() string {
 func EntriesToString(entries []*Entry) string {
 	var sb strings.Builder
 	for _, entry := range entries {
-		sb.WriteString(entry.String())
+		sb.WriteString(fmt.Sprintf("%+v", entry))
 		sb.WriteString("\n")
 	}
 	return sb.String()

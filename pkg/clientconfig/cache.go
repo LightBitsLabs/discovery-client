@@ -481,8 +481,8 @@ func (c *cache) fileAdded(filename string) ([]ClientClusterPair, error) {
 
 func (c *cache) existEntry(newEntry *Entry, entriesList []*Entry) bool {
 	for _, inListEntry := range entriesList {
-		c.log.Tracef("[existEntry] new: %s, existing entry: %s",
-			newEntry.String(),
+		c.log.Tracef("[existEntry] new: %+v, existing entry: %s",
+			newEntry,
 			EntriesToString(entriesList))
 		if newEntry.compare(inListEntry) {
 			// TODO: check if we need to update the entry, and find a way to
@@ -508,7 +508,7 @@ func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
 		}
 	}
 	c.cacheEntries = append(c.cacheEntries, newEntry)
-	c.log.Infof("added cache (len=%d) entry: %s", len(c.cacheEntries), newEntry.String())
+	c.log.Infof("added cache (len=%d) entry: %+v", len(c.cacheEntries), newEntry)
 	metrics.Metrics.EntriesTotal.WithLabelValues().Inc()
 
 	key := TKey{transport: newEntry.Transport, Ip: newEntry.Traddr,
