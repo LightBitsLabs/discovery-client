@@ -699,6 +699,7 @@ func (hosts *NvmfHosts) MaybeUpdateHostIDs(entries []*Entry) {
 	}
 }
 
+// Scan all fabrics connections including RDMA
 func GetNvmfHosts() NvmfHosts {
 	nvmeCtrlPath := "/sys/class/nvme-fabrics/ctl/nvme*"
 	readValue := func(filename string) (string, error) {
@@ -719,11 +720,6 @@ func GetNvmfHosts() NvmfHosts {
 	connectedHosts.hosts = make(map[string]string)
 
 	for _, d := range devices {
-
-		transport, err := readValue(filepath.Join(d, "transport"))
-		if err != nil || transport != "tcp" {
-			continue
-		}
 
 		hostID, err := readValue(filepath.Join(d, "hostid"))
 		if err != nil {
