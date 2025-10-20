@@ -209,6 +209,7 @@ func NewCache(ctx context.Context, userDirPath, internalDirPath string, autoDete
 		autoDetectEntries: autoDetectEntries,
 	}
 	c.ctx, c.cancel = context.WithCancel(ctx)
+	c.nvmfHosts = GetNvmfHosts()
 	return c
 }
 
@@ -461,8 +462,6 @@ func (c *cache) fileAdded(filename string) ([]ClientClusterPair, error) {
 		return nil, err
 	}
 	c.log.Debugf("Found %d entries in user file %s", len(newEntries), filename)
-	c.nvmfHosts = GetNvmfHosts()
-	c.nvmfHosts.MaybeUpdateHostIDs(newEntries)
 	for _, newEntry := range newEntries {
 		newEntry.Persistent = true
 		pair, err := c.addEntry(newEntry)
@@ -510,6 +509,7 @@ func (c *cache) addEntry(newEntry *Entry) (ClientClusterPair, error) {
 			}
 		}
 	}
+	c.nvmfHosts.MaybeUpdateHostIDs(newEntry)
 	c.cacheEntries = append(c.cacheEntries, newEntry)
 	c.log.Infof("added cache (len=%d) entry: %+v", len(c.cacheEntries), newEntry)
 	metrics.Metrics.EntriesTotal.WithLabelValues().Inc()
@@ -689,13 +689,11 @@ func (hosts *NvmfHosts) GetHostID(hostnqn string) string {
 	return hosts.hosts[hostnqn]
 }
 
-func (hosts *NvmfHosts) MaybeUpdateHostIDs(entries []*Entry) {
-	for _, e := range entries {
-		effectiveHostid := hosts.GetHostID(e.Hostnqn)
-		if effectiveHostid != "" && effectiveHostid != e.Hostid {
-			logrus.Infof("overriding nqn=%s configured_hostid=%s:effective_hostid=%s", e.Hostnqn, e.Hostid, effectiveHostid)
-			e.EffectiveHostid = effectiveHostid
-		}
+func (hosts *NvmfHosts) MaybeUpdateHostIDs(e *Entry) {
+	effectiveHostid := hosts.GetHostID(e.Hostnqn)
+	if effectiveHostid != "" && effectiveHostid != e.Hostid {
+		logrus.Infof("overriding nqn=%s configured_hostid=%s:effective_hostid=%s", e.Hostnqn, e.Hostid, effectiveHostid)
+		e.EffectiveHostid = effectiveHostid
 	}
 }
 
