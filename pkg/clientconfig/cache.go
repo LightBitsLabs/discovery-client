@@ -487,7 +487,7 @@ func (c *cache) existEntry(newEntry *Entry, entriesList []*Entry) bool {
 			newEntry,
 			EntriesToString(entriesList))
 		if newEntry.compare(inListEntry) {
-			// TODO: check if we need to update the entry, and find a way to
+			// TODO (LBM1-40307): check if we need to update the entry, and find a way to
 			// propagate the change to the cache connections.
 			// (for example, if the ctrlLossTMO changed)
 			return true
