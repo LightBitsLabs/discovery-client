@@ -229,10 +229,13 @@ preflight-ubi-image: verify_image_registry build/preflight bin/preflight-linux-a
 
 push-images: push-image push-image-ubi9
 
-push-image: verify_image_registry
+login-to-pulp-registry:
+	@echo ${PULP_REGISTRY_PASS} | docker login -u ${PULP_REGISTRY_USER} --password-stdin ${PULP_REGISTRY}
+
+push-image: verify_image_registry login-to-pulp-registry
 	$(Q)docker push $(IMG)
 
-push-image-ubi9: verify_image_registry
+push-image-ubi9: verify_image_registry login-to-pulp-registry
 	$(Q)docker push $(IMG_UBI)
 
 print-% : ## print the variable name to stdout
