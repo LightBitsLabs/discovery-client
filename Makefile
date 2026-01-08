@@ -142,18 +142,20 @@ discovery-rpms-%: build/dist build/discovery-client
 	$(Q) rm -rf ${RPMOUT_DIR}
 	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="_builddir `pwd`" --define="dist $(DISCOVERY_CLIENT_RELEASE).$*" --define "_rpmdir $(RPMOUT_DIR)" discovery-client.spec
 
-discovery-client-debs-%:
-	(cd build/dist && sudo alien --to-deb -v -k ${RPMOUT_DIR}/x86_64/discovery-client*.rpm && sudo chown ${USER}:${USER} ${WORKSPACE_TOP}/discovery-client/build/dist/*.deb)
+discovery-client-debs: VERSION = $(or $(LIGHTOS_VERSION),$(DEFAULT_REL))
+discovery-client-debs:
+	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="_builddir `pwd`" --define="dist $(DISCOVERY_CLIENT_RELEASE)" --define "_rpmdir $(RPMOUT_DIR)" discovery-client.spec
+	(cd build/dist && sudo alien --to-deb -v -k ${RPMOUT_DIR}/x86_64/discovery-client-${VERSION}-${DISCOVERY_CLIENT_RELEASE}.x86_64.rpm && sudo chown ${USER}:${USER} ${WORKSPACE_TOP}/discovery-client/build/dist/*.deb)
 
-discovery-packages-el8: discovery-rpms-el8 discovery-client-debs-el8
+discovery-packages-el8: discovery-rpms-el8 discovery-client-debs
 
-discovery-packages-el9: discovery-rpms-el9 discovery-client-debs-el9
+discovery-packages-el9: discovery-rpms-el9 discovery-client-debs
 
 install-discovery-client-packages-%: COMPONENT_PATH = $(shell component-tool localpath --repo=discovery-client --type=$(BUILD_TYPE) discovery-client-packages-$*)
 install-discovery-client-packages-%:
 	$(Q)mkdir -p $(COMPONENT_PATH)/
 	$(Q)rm -rf $(COMPONENT_PATH)/*.rpm $(COMPONENT_PATH)/*.deb
-	$(Q)cp ${RPMOUT_DIR}/x86_64/discovery-client*.rpm $(COMPONENT_PATH)/
+	$(Q)cp ${RPMOUT_DIR}/x86_64/discovery-client*el*.rpm $(COMPONENT_PATH)/
 	$(Q)cp build/dist/discovery-client*.deb $(COMPONENT_PATH)/
 	echo "Installed discovery-client RPMs and DEBs"
 
