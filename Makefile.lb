@@ -16,8 +16,8 @@ ifneq ("$(wildcard /.inside-lb-build)","")
 include $(WORKSPACE_TOP)/common/Makefile.env
 endif
 
-
-DOCKER_REGISTRY := $(or $(DOCKER_REGISTRY),lbdocker:5000)
+DEFAULT_DOCKER_REGISTRY := pulp-registry.lab.lightbitslabs.com
+DOCKER_REGISTRY := $(or $(DOCKER_REGISTRY),$(DEFAULT_DOCKER_REGISTRY))
 
 BUILD_FLAGS := DOCKER_REGISTRY=$(DOCKER_REGISTRY) \
     LIGHTOS_VERSION=$(LIGHTOS_VERSION)
