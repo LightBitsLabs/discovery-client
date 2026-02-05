@@ -49,6 +49,22 @@ discovery-client:
     - file://go.mod
     - file://discovery-client.spec
 
+  discovery-client-image:
+    build:
+    - make -f Makefile.lb DEFAULT_ORGANIZATION=discovery-client build-image
+    install:
+    - make -f Makefile.lb DEFAULT_ORGANIZATION=discovery-client push-image
+    deps:
+    - file://Makefile
+    - file://pkg
+    - file://model
+    - file://vendor
+    - file://application
+    - file://main.go
+    - file://go.mod
+    - file://lb.yaml
+    - file://Dockerfile.discovery-client
+
   lb-nvme-discovery-client:
     build:
     - make -f Makefile.lb build-image
