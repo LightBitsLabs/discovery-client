@@ -64,6 +64,11 @@ discovery-client:
     - file://go.mod
     - file://lb.yaml
     - file://Dockerfile.discovery-client
+    - env://IMAGE_NAME_ONLY
+    - env://DEFAULT_ORGANIZATION
+    - env://DOCKER_REGISTRY
+    - env://BUILD_HASH
+    - env://GIT_TAG
 
   lb-nvme-discovery-client-ubi9:
     build:
@@ -80,3 +85,8 @@ discovery-client:
     - file://go.mod
     - file://lb.yaml
     - file://Dockerfile.discovery-client-ubi9
+    - env://IMAGE_NAME_ONLY
+    - env://DEFAULT_ORGANIZATION
+    - env://DOCKER_REGISTRY
+    - env://BUILD_HASH
+    - env://GIT_TAG

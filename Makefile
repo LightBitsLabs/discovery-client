@@ -36,9 +36,16 @@ override DOCKER_REGISTRY := $(and $(DOCKER_REGISTRY),$(DOCKER_REGISTRY)/)
 
 # --- Configuration ---
 # The image name without any organization or registry prefix
-IMAGE_NAME_ONLY := lb-nvme-discovery-client
+IMAGE_NAME_ONLY ?= lb-nvme-discovery-client
 # The default organization to use if DOCKER_REGISTRY is just a hostname
-DEFAULT_ORGANIZATION := lightos-csi
+DEFAULT_ORGANIZATION ?= lightos-csi
+# Ensure that empty environment overrides still fall back to sane defaults.
+ifeq ($(strip $(IMAGE_NAME_ONLY)),)
+override IMAGE_NAME_ONLY := lb-nvme-discovery-client
+endif
+ifeq ($(strip $(DEFAULT_ORGANIZATION)),)
+override DEFAULT_ORGANIZATION := lightos-csi
+endif
 # The default full image path if DOCKER_REGISTRY is not set at all
 DEFAULT_FULL_IMAGE_PATH := $(DEFAULT_ORGANIZATION)/$(IMAGE_NAME_ONLY)
 DEFAULT_FULL_IMAGE_PATH_UBI := $(DEFAULT_ORGANIZATION)/$(IMAGE_NAME_ONLY)-ubi9
