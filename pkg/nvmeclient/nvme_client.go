@@ -620,7 +620,7 @@ func ConnectAllNVMEDevices(logPageEntries []*hostapi.NvmeDiscPageEntry,
 		if logPageEntry.SubType != nvme.NVME_NQN_NVME {
 			continue
 		}
-		ctrlLossTMOValue := -1
+		ctrlLossTMOValue := cfg.CtrlLossTMO
 		if ctrlLossTMO != nil {
 			ctrlLossTMOValue = *ctrlLossTMO
 		}

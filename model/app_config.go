@@ -57,6 +57,7 @@ type AppConfig struct {
 	AuxSuffix                string            `yaml:"auxSuffix,omitempty"`
 	DhChapSecret             string            `yaml:"dhChapSecret,omitempty"`
 	DhChapCtrlSecret         string            `yaml:"dhChapCtrlSecret,omitempty"`
+	CtrlLossTMO              int               `yaml:"ctrlLossTMO"`
 }
 
 func (cfg *AppConfig) verifyConfigurationIsValid() error {
@@ -71,6 +72,9 @@ func (cfg *AppConfig) verifyConfigurationIsValid() error {
 		return fmt.Errorf("dhchapsecret is mandatory when using dhchapctrlsecret")
 	}
 
+	if cfg.CtrlLossTMO == 0 || cfg.CtrlLossTMO < -1 {
+		cfg.CtrlLossTMO = 600
+	}
 	return cfg.Logging.IsValid()
 }
 
