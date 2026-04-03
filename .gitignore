@@ -5,3 +5,5 @@ build
 bin/
 .semrel/
 CHANGELOG.md
+*/__pycache__/
+*.pyc
