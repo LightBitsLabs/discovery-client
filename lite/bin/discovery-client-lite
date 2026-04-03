@@ -1,0 +1,5 @@
+#!/bin/bash
+# Wrapper for discovery-client-lite Python package.
+# The package is installed to /usr/lib/discovery-client-lite/discovery_client_lite/.
+export PYTHONPATH="/usr/lib/discovery-client-lite${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m discovery_client_lite "$@"
