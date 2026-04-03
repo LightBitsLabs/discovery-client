@@ -185,9 +185,11 @@ class TestLoadEnvOverrides(unittest.TestCase):
         self.assertEqual(result, {})
 
     def test_clientconfigdir(self):
+        # DC_CLIENTCONFIGDIR was removed in the simplified daemon; verify it is
+        # not recognized (no entry should be returned for it).
         env = {'DC_CLIENTCONFIGDIR': '/tmp/test-config'}
         result = load_env_overrides(env)
-        self.assertEqual(result['clientConfigDir'], '/tmp/test-config')
+        self.assertNotIn('clientConfigDir', result)
 
     def test_nested_logging(self):
         env = {'DC_LOGGING_LEVEL': 'debug', 'DC_LOGGING_FILENAME': '/tmp/test.log'}
@@ -211,9 +213,11 @@ class TestLoadEnvOverrides(unittest.TestCase):
         self.assertEqual(result['kato'], '20')
 
     def test_autodetect_nested(self):
+        # DC_AUTODETECTENTRIES_ENABLED was removed in the simplified daemon;
+        # verify it is not recognized.
         env = {'DC_AUTODETECTENTRIES_ENABLED': 'false'}
         result = load_env_overrides(env)
-        self.assertEqual(result['autoDetectEntries.enabled'], 'false')
+        self.assertNotIn('autoDetectEntries.enabled', result)
 
 
 class TestNvmeCliDiscover(unittest.TestCase):
@@ -334,13 +338,6 @@ class TestArgparse(unittest.TestCase):
         self.assertEqual(args.trsvcid, 4420)
         self.assertEqual(args.nqn, 'nqn.subsys1')
 
-    def test_connect_all_flags(self):
-        args = self._parse('connect-all -a 10.0.0.1 -p -m 4 -k 10')
-        self.assertEqual(args.command, 'connect-all')
-        self.assertTrue(args.persistant)
-        self.assertEqual(args.max_queues, 4)
-        self.assertEqual(args.kato, 10)
-
     def test_disconnect_flag(self):
         args = self._parse('disconnect -d /dev/nvme0')
         self.assertEqual(args.command, 'disconnect')
@@ -394,11 +391,21 @@ class TestAddHostnqn(unittest.TestCase):
 
     def setUp(self):
         self.config_dir = tempfile.mkdtemp()
+        self.conf_file = os.path.join(self.config_dir, 'discovery.conf')
+        # Redirect DISCOVERY_CONF to temp file
+        import discovery_client_lite.nvme as _nvme
+        self._orig_conf = _nvme.DISCOVERY_CONF
+        _nvme.DISCOVERY_CONF = self.conf_file
 
     def tearDown(self):
+        import discovery_client_lite.nvme as _nvme
+        _nvme.DISCOVERY_CONF = self._orig_conf
         shutil.rmtree(self.config_dir)
 
-    def test_creates_config_file(self):
+    def _read_conf(self):
+        return open(self.conf_file).read()
+
+    def test_creates_config_entry(self):
         args = MagicMock()
         args.name = 'test-cluster'
         args.addresses = ['10.0.0.1:8009', '10.0.0.2:8009']
@@ -407,12 +414,11 @@ class TestAddHostnqn(unittest.TestCase):
         args.nqn = 'nqn.subsys1'
         args.transport = 'tcp'
 
-        rc = cmd_add_hostnqn(args, self.config_dir)
+        rc = cmd_add_hostnqn(args)
         self.assertEqual(rc, 0)
 
-        filepath = os.path.join(self.config_dir, 'test-cluster')
-        self.assertTrue(os.path.exists(filepath))
-        content = open(filepath).read()
+        content = self._read_conf()
+        self.assertIn('# name=test-cluster', content)
         self.assertIn('-a 10.0.0.1', content)
         self.assertIn('-a 10.0.0.2', content)
         self.assertIn('-q nqn.host1', content)
@@ -427,7 +433,7 @@ class TestAddHostnqn(unittest.TestCase):
         args.transport = 'tcp'
         args.hostid = ''
 
-        rc = cmd_add_hostnqn(args, self.config_dir)
+        rc = cmd_add_hostnqn(args)
         self.assertEqual(rc, 1)
 
     def test_includes_hostid_when_provided(self):
@@ -439,9 +445,8 @@ class TestAddHostnqn(unittest.TestCase):
         args.nqn = 'nqn.subsys1'
         args.transport = 'tcp'
 
-        cmd_add_hostnqn(args, self.config_dir)
-        content = open(os.path.join(self.config_dir, 'test-cluster')).read()
-        self.assertIn('-I uuid-abc-123', content)
+        cmd_add_hostnqn(args)
+        self.assertIn('-I uuid-abc-123', self._read_conf())
 
     def test_address_without_port(self):
         args = MagicMock()
@@ -452,34 +457,40 @@ class TestAddHostnqn(unittest.TestCase):
         args.nqn = 'nqn.subsys1'
         args.transport = 'tcp'
 
-        cmd_add_hostnqn(args, self.config_dir)
-        content = open(os.path.join(self.config_dir, 'test-cluster')).read()
-        self.assertIn('-s 8009', content)
+        cmd_add_hostnqn(args)
+        self.assertIn('-s 8009', self._read_conf())
 
 
 class TestRemoveHostnqn(unittest.TestCase):
 
     def setUp(self):
         self.config_dir = tempfile.mkdtemp()
+        self.conf_file = os.path.join(self.config_dir, 'discovery.conf')
+        import discovery_client_lite.nvme as _nvme
+        self._orig_conf = _nvme.DISCOVERY_CONF
+        _nvme.DISCOVERY_CONF = self.conf_file
 
     def tearDown(self):
+        import discovery_client_lite.nvme as _nvme
+        _nvme.DISCOVERY_CONF = self._orig_conf
         shutil.rmtree(self.config_dir)
 
-    def test_removes_file(self):
-        filepath = os.path.join(self.config_dir, 'test-cluster')
-        with open(filepath, 'w') as f:
-            f.write('-a 10.0.0.1 -s 8009\n')
+    def test_removes_tagged_section(self):
+        # Pre-populate discovery.conf with lines tagged with # name=test-cluster
+        with open(self.conf_file, 'w') as f:
+            f.write('-t tcp -a 10.0.0.1 -s 8009 -q nqn.host1 -n nqn.subsys1 # name=test-cluster\n')
 
         args = MagicMock()
         args.name = 'test-cluster'
-        rc = cmd_remove_hostnqn(args, self.config_dir)
+        rc = cmd_remove_hostnqn(args)
         self.assertEqual(rc, 0)
-        self.assertFalse(os.path.exists(filepath))
+        content = open(self.conf_file).read().strip()
+        self.assertEqual(content, '')
 
-    def test_missing_file_silent(self):
+    def test_missing_section_silent(self):
         args = MagicMock()
         args.name = 'nonexistent'
-        rc = cmd_remove_hostnqn(args, self.config_dir)
+        rc = cmd_remove_hostnqn(args)
         self.assertEqual(rc, 0)
 
 
@@ -508,9 +519,20 @@ class TestAddHostnqnCommaSplit(unittest.TestCase):
 
     def setUp(self):
         self.config_dir = tempfile.mkdtemp()
+        self.conf_file = os.path.join(self.config_dir, 'discovery.conf')
+        import discovery_client_lite.nvme as _nvme
+        self._orig_conf = _nvme.DISCOVERY_CONF
+        _nvme.DISCOVERY_CONF = self.conf_file
 
     def tearDown(self):
+        import discovery_client_lite.nvme as _nvme
+        _nvme.DISCOVERY_CONF = self._orig_conf
         shutil.rmtree(self.config_dir)
+
+    def _endpoint_lines(self):
+        content = open(self.conf_file).read()
+        return [l for l in content.strip().split('\n')
+                if l.strip() and not l.strip().startswith('#')]
 
     def test_comma_separated_addresses(self):
         """Comma-separated addresses must produce one line per address."""
@@ -522,16 +544,14 @@ class TestAddHostnqnCommaSplit(unittest.TestCase):
         args.nqn = 'nqn.subsys1'
         args.transport = 'tcp'
 
-        rc = cmd_add_hostnqn(args, self.config_dir)
+        rc = cmd_add_hostnqn(args)
         self.assertEqual(rc, 0)
 
-        content = open(os.path.join(self.config_dir, 'test-cluster')).read()
-        lines = [l for l in content.strip().split('\n') if l.strip()]
-        self.assertEqual(len(lines), 3, f"Expected 3 lines, got {len(lines)}: {lines}")
-        # Each line must have a clean IP in -a, not IP:PORT
+        lines = self._endpoint_lines()
+        self.assertEqual(len(lines), 3)
         for line in lines:
             ep = parse_config_line(line)
-            self.assertNotIn(':', ep.traddr, f"traddr should not contain port: {ep.traddr}")
+            self.assertNotIn(':', ep.traddr)
             self.assertEqual(ep.port, '8009')
 
     def test_space_separated_addresses(self):
@@ -544,11 +564,10 @@ class TestAddHostnqnCommaSplit(unittest.TestCase):
         args.nqn = 'nqn.subsys1'
         args.transport = 'tcp'
 
-        rc = cmd_add_hostnqn(args, self.config_dir)
+        rc = cmd_add_hostnqn(args)
         self.assertEqual(rc, 0)
 
-        content = open(os.path.join(self.config_dir, 'test-cluster')).read()
-        lines = [l for l in content.strip().split('\n') if l.strip()]
+        lines = self._endpoint_lines()
         self.assertEqual(len(lines), 2)
 
 
@@ -570,6 +589,281 @@ class TestParseConfigLineWithPort(unittest.TestCase):
         ep = parse_config_line('-t tcp -a 10.0.0.1 -q nqn.host1')
         self.assertEqual(ep.traddr, '10.0.0.1')
         self.assertEqual(ep.port, '8009')
+
+
+class TestReadDiscoveryConf(unittest.TestCase):
+    """Tests for the flat read_discovery_conf returning List[Endpoint]."""
+
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.conf', delete=False)
+        self.tmp_path = self.tmp.name
+
+    def tearDown(self):
+        os.unlink(self.tmp_path)
+
+    def _write(self, content):
+        with open(self.tmp_path, 'w') as f:
+            f.write(content)
+
+    def test_returns_list_of_endpoints(self):
+        from discovery_client_lite.config import read_discovery_conf
+        self._write('-t tcp -a 10.0.0.1 -s 8009 -q nqn.host1 -n nqn.subsys1\n')
+        result = read_discovery_conf(self.tmp_path)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].traddr, '10.0.0.1')
+        self.assertEqual(result[0].port, '8009')
+        self.assertEqual(result[0].hostnqn, 'nqn.host1')
+
+    def test_name_comment_ignored_by_parser(self):
+        from discovery_client_lite.config import read_discovery_conf
+        self._write(
+            '-t tcp -a 10.0.0.1 -s 8009 -q nqn.host1 -n nqn.subsys1 # name=test-cluster\n'
+            '-t tcp -a 10.0.0.2 -s 8009 -q nqn.host1 -n nqn.subsys1 # name=test-cluster\n'
+        )
+        result = read_discovery_conf(self.tmp_path)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0].traddr, '10.0.0.1')
+        self.assertEqual(result[1].traddr, '10.0.0.2')
+
+    def test_empty_file_returns_empty_list(self):
+        from discovery_client_lite.config import read_discovery_conf
+        self._write('')
+        result = read_discovery_conf(self.tmp_path)
+        self.assertEqual(result, [])
+
+    def test_comment_only_lines_skipped(self):
+        from discovery_client_lite.config import read_discovery_conf
+        self._write('# This is a comment\n# Another comment\n')
+        result = read_discovery_conf(self.tmp_path)
+        self.assertEqual(result, [])
+
+    def test_missing_file_returns_empty_list(self):
+        from discovery_client_lite.config import read_discovery_conf
+        result = read_discovery_conf('/nonexistent/path/discovery.conf')
+        self.assertEqual(result, [])
+
+    def test_multiple_endpoints(self):
+        from discovery_client_lite.config import read_discovery_conf
+        self._write(
+            '-t tcp -a 10.0.0.1 -s 8009 -q nqn.h1 -n nqn.s1\n'
+            '-t tcp -a 10.0.0.2 -s 8009 -q nqn.h2 -n nqn.s2\n'
+            '-t tcp -a 10.0.0.3 -s 8009 -q nqn.h3 -n nqn.s3\n'
+        )
+        result = read_discovery_conf(self.tmp_path)
+        self.assertEqual(len(result), 3)
+        addrs = [ep.traddr for ep in result]
+        self.assertIn('10.0.0.1', addrs)
+        self.assertIn('10.0.0.2', addrs)
+        self.assertIn('10.0.0.3', addrs)
+
+
+class TestSetCtrlLossTmoSysfs(unittest.TestCase):
+    """Tests for the sysfs ctrl_loss_tmo helper."""
+
+    def setUp(self):
+        self.sysfs = tempfile.mkdtemp()
+        # Create fake fabrics controller directories (all are fabrics — no pcie)
+        for name in ('nvme0', 'nvme1', 'nvme2'):
+            d = os.path.join(self.sysfs, name)
+            os.makedirs(d)
+            with open(os.path.join(d, 'ctrl_loss_tmo'), 'w') as f:
+                f.write('3600\n')
+
+    def tearDown(self):
+        shutil.rmtree(self.sysfs)
+
+    def test_sets_only_tcp_controllers(self):
+        from discovery_client_lite.nvme import set_ctrl_loss_tmo_sysfs
+        real_path = __import__('pathlib').Path
+        with patch('discovery_client_lite.nvme.NVME_FABRICS_CTL',
+                   real_path(self.sysfs)):
+            count = set_ctrl_loss_tmo_sysfs(1)
+
+        self.assertEqual(count, 3)
+        for name in ('nvme0', 'nvme1', 'nvme2'):
+            with open(os.path.join(self.sysfs, name, 'ctrl_loss_tmo')) as f:
+                self.assertEqual(f.read().strip(), '1')
+
+    def test_returns_zero_when_no_controllers(self):
+        empty = tempfile.mkdtemp()
+        try:
+            from discovery_client_lite.nvme import set_ctrl_loss_tmo_sysfs
+            real_path = __import__('pathlib').Path
+            with patch('discovery_client_lite.nvme.NVME_FABRICS_CTL',
+                       real_path(empty)):
+                count = set_ctrl_loss_tmo_sysfs(1)
+            self.assertEqual(count, 0)
+        finally:
+            shutil.rmtree(empty)
+
+
+class TestControlSocket(unittest.TestCase):
+    """Tests for the daemon control socket interface."""
+
+    def _make_daemon(self):
+        """Create a daemon with mocked externals."""
+        with patch('discovery_client_lite.daemon.get_host_id', return_value='test-id'):
+            d = DiscoveryDaemon(
+                cache_file='/dev/null',
+                poll_interval=5,
+                ctrl_loss_tmo=3600,
+            )
+        return d
+
+    def test_handle_set_ctrl_loss_tmo(self):
+        daemon = self._make_daemon()
+        with patch('discovery_client_lite.daemon.set_ctrl_loss_tmo_sysfs', return_value=5) as mock_sysfs:
+            result = daemon.handle_control_command(
+                {'command': 'set', 'key': 'ctrl_loss_tmo', 'value': 1}
+            )
+        self.assertTrue(result['ok'])
+        self.assertEqual(daemon.ctrl_loss_tmo, 1)
+        mock_sysfs.assert_called_once_with(1)
+
+    def test_handle_set_invalid_key(self):
+        daemon = self._make_daemon()
+        result = daemon.handle_control_command(
+            {'command': 'set', 'key': 'bogus', 'value': 1}
+        )
+        self.assertFalse(result['ok'])
+        self.assertIn('unknown key', result['error'])
+
+    def test_handle_unknown_command(self):
+        daemon = self._make_daemon()
+        result = daemon.handle_control_command({'command': 'foobar'})
+        self.assertFalse(result['ok'])
+        self.assertIn('unknown command', result['error'])
+
+    def test_handle_set_ctrl_loss_tmo_bad_value(self):
+        daemon = self._make_daemon()
+        result = daemon.handle_control_command(
+            {'command': 'set', 'key': 'ctrl_loss_tmo', 'value': 'not_a_number'}
+        )
+        self.assertFalse(result['ok'])
+        self.assertIn('integer', result['error'])
+
+
+class TestControlSocketRoundTrip(unittest.TestCase):
+    """Tests the control socket listener end-to-end."""
+
+    def test_socket_round_trip(self):
+        import json
+        import socket
+        import discovery_client_lite.daemon as daemon_mod
+        import time
+
+        sock_path = os.path.join(tempfile.mkdtemp(), 'test.sock')
+        orig_path = daemon_mod.CONTROL_SOCKET_PATH
+        daemon_mod.CONTROL_SOCKET_PATH = sock_path
+
+        mock_daemon = MagicMock()
+        mock_daemon.handle_control_command.return_value = {'ok': True, 'message': 'done'}
+        running = True
+
+        try:
+            thread = daemon_mod.start_control_listener(mock_daemon, lambda: running)
+            if thread is None:
+                self.skipTest('Cannot create control socket')
+
+            time.sleep(0.1)
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.settimeout(2)
+            s.connect(sock_path)
+            s.sendall(json.dumps({'command': 'set', 'key': 'ctrl_loss_tmo', 'value': 1}).encode())
+            response = json.loads(s.recv(4096).decode())
+            s.close()
+
+            self.assertTrue(response['ok'])
+            mock_daemon.handle_control_command.assert_called_once_with(
+                {'command': 'set', 'key': 'ctrl_loss_tmo', 'value': 1}
+            )
+        finally:
+            running = False
+            time.sleep(1.5)
+            daemon_mod.CONTROL_SOCKET_PATH = orig_path
+            try:
+                os.unlink(sock_path)
+                os.rmdir(os.path.dirname(sock_path))
+            except OSError:
+                pass
+
+
+class TestShutdownDisconnects(unittest.TestCase):
+    """Verify daemon shutdown disconnects discovery controllers."""
+
+    @patch('discovery_client_lite.daemon.sd_notify')
+    @patch.object(NvmeCli, 'disconnect_by_nqn')
+    @patch('discovery_client_lite.daemon.start_aen_listener')
+    @patch('discovery_client_lite.daemon.start_control_listener')
+    @patch('discovery_client_lite.daemon.load_referral_cache', return_value=[])
+    @patch('discovery_client_lite.daemon.start_metrics_server')
+    @patch('discovery_client_lite.daemon.get_connected_controllers', return_value=[])
+    @patch('discovery_client_lite.daemon.read_discovery_conf', return_value=[])
+    def test_run_disconnects_on_shutdown(
+        self, _read_disc, _get_conn, _metrics, _cache,
+        _ctrl_listener, _aen, mock_disconnect, _notify
+    ):
+        with patch('discovery_client_lite.daemon.get_host_id', return_value='test-id'):
+            daemon = DiscoveryDaemon(
+                cache_file='/dev/null',
+                poll_interval=5,
+                ctrl_loss_tmo=3600,
+            )
+        # Simulate immediate shutdown
+        daemon.running = False
+        daemon.run(aen_enabled=False)
+
+        mock_disconnect.assert_called_once()
+
+
+class TestCmdSet(unittest.TestCase):
+    """Tests for the 'set' CLI subcommand."""
+
+    def test_no_setting_returns_error(self):
+        from discovery_client_lite.cli import cmd_set
+        args = MagicMock()
+        args.ctrl_loss_tmo = None
+        rc = cmd_set(args)
+        self.assertEqual(rc, 1)
+
+    @patch('discovery_client_lite.cli._socket')
+    def test_sends_request_to_daemon(self, mock_sock_mod):
+        from discovery_client_lite.cli import cmd_set
+        import json
+
+        mock_conn = MagicMock()
+        mock_conn.recv.return_value = json.dumps({'ok': True, 'message': 'done'}).encode()
+        mock_sock_mod.socket.return_value = mock_conn
+        mock_sock_mod.AF_UNIX = __import__('socket').AF_UNIX
+        mock_sock_mod.SOCK_STREAM = __import__('socket').SOCK_STREAM
+
+        args = MagicMock()
+        args.ctrl_loss_tmo = 1
+        rc = cmd_set(args)
+        self.assertEqual(rc, 0)
+
+        # Verify the JSON request sent
+        sent_data = mock_conn.sendall.call_args[0][0]
+        request = json.loads(sent_data.decode())
+        self.assertEqual(request['command'], 'set')
+        self.assertEqual(request['key'], 'ctrl_loss_tmo')
+        self.assertEqual(request['value'], 1)
+
+    @patch('discovery_client_lite.cli._socket')
+    def test_daemon_unreachable(self, mock_sock_mod):
+        from discovery_client_lite.cli import cmd_set
+
+        mock_conn = MagicMock()
+        mock_conn.connect.side_effect = ConnectionRefusedError('no daemon')
+        mock_sock_mod.socket.return_value = mock_conn
+        mock_sock_mod.AF_UNIX = __import__('socket').AF_UNIX
+        mock_sock_mod.SOCK_STREAM = __import__('socket').SOCK_STREAM
+
+        args = MagicMock()
+        args.ctrl_loss_tmo = 1
+        rc = cmd_set(args)
+        self.assertEqual(rc, 1)
 
 
 if __name__ == '__main__':

@@ -43,9 +43,6 @@ class ConnectedController:
     transport: str
 
 
-RECONNECT_GRACE_MULTIPLIER = 3  # wait this many reconnect_delay intervals before failover
-
-
 @dataclass
 class ClusterState:
     """State for a single cluster (identified by subnqn)."""
@@ -54,4 +51,3 @@ class ClusterState:
     active_endpoint: Optional[Tuple[str, str]] = None
     endpoints: List[Endpoint] = field(default_factory=list)
     referrals: List[CachedReferral] = field(default_factory=list)
-    reconnecting_since: Optional[float] = None  # timestamp when active endpoint disappeared

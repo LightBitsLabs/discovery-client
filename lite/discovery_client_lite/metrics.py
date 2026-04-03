@@ -2,7 +2,7 @@
 
 import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from threading import Thread
+from threading import Lock, Thread
 from typing import Dict
 
 log = logging.getLogger('discovery-client-lite')
@@ -52,6 +52,7 @@ class Metrics:
     """Prometheus metrics collector matching Go discovery-client metric names."""
 
     def __init__(self):
+        self._lock = Lock()
         # Gauges
         self.tcp_server_serving_states = 0
         self.tcp_queues_total = 0
@@ -74,6 +75,10 @@ class Metrics:
         )
 
     def render(self) -> str:
+        with self._lock:
+            return self._render_unlocked()
+
+    def _render_unlocked(self) -> str:
         lines = []
 
         def gauge(name, help_text, value):
@@ -123,12 +128,12 @@ class Metrics:
         )
         counter(
             'discovery_connect_attempts_total',
-            'Total connect-all attempts',
+            'Total connect attempts',
             self.connect_attempts_total,
         )
         counter(
             'discovery_connect_failures_total',
-            'Total connect-all failures',
+            'Total connect failures',
             self.connect_failures_total,
         )
         gauge(
@@ -161,12 +166,12 @@ class MetricsHandler(BaseHTTPRequestHandler):
         pass
 
 
-def start_metrics_server(port: int):
+def start_metrics_server(port: int, bind_address: str = '127.0.0.1'):
     """Start HTTP metrics server in a daemon thread."""
     try:
-        server = HTTPServer(('0.0.0.0', port), MetricsHandler)
+        server = HTTPServer((bind_address, port), MetricsHandler)
         thread = Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        log.info('Metrics server listening on :%d/metrics', port)
+        log.info('Metrics server listening on %s:%d/metrics', bind_address, port)
     except OSError as e:
-        log.warning('Failed to start metrics server on port %d: %s', port, e)
+        log.warning('Failed to start metrics server on %s:%d: %s', bind_address, port, e)

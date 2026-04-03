@@ -1,19 +1,35 @@
 """Discovery daemon, AEN listener, and systemd notification."""
 
+import json
 import logging
 import os
 import random
+import select
 import signal
 import socket
 import time
 from pathlib import Path
 from threading import Event, Thread
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
-from .models import Endpoint, CachedReferral, ClusterState, RECONNECT_GRACE_MULTIPLIER
+from .models import Endpoint, CachedReferral, ClusterState
 from .metrics import metrics, start_metrics_server
-from .nvme import NvmeCli, DISCOVERY_SUBNQN, get_connected_controllers, get_discovery_controllers, get_host_id, get_connected_hostids
-from .config import read_config_dir, auto_detect_endpoints, load_referral_cache, save_referral_cache, extract_referrals
+from .nvme import (
+    NvmeCli,
+    DISCOVERY_SUBNQN,
+    DISCOVERY_CONF,
+    get_connected_controllers,
+    get_host_id,
+    get_connected_hostids,
+    set_ctrl_loss_tmo_sysfs,
+)
+from .config import (
+    read_discovery_conf,
+    load_referral_cache,
+    save_referral_cache,
+    extract_referrals,
+    extract_io_targets,
+)
 
 log = logging.getLogger('discovery-client-lite')
 
@@ -42,61 +58,146 @@ def start_aen_listener(wake_event: Event, running_check) -> Optional[Thread]:
     listener monitors those via a netlink socket and signals the main loop
     to run a poll cycle immediately.
 
+    Uses epoll for efficient blocking instead of timeout-based polling.
+    A wake pipe allows clean shutdown without waiting for a timeout.
+
     Falls back gracefully if the netlink socket cannot be opened (e.g.,
     missing permissions or unsupported platform).
     """
     try:
         sock = socket.socket(socket.AF_NETLINK, socket.SOCK_DGRAM, NETLINK_KOBJECT_UEVENT)
         sock.bind((os.getpid(), 1))  # multicast group 1 = kernel events
-        sock.settimeout(1.0)
+        sock.setblocking(False)
     except OSError as e:
         log.warning('Cannot open netlink socket for AEN monitoring: %s', e)
         log.info('Falling back to poll-only mode')
         return None
 
+    # Wake pipe: write end is used to unblock epoll on shutdown
+    wake_r, wake_w = os.pipe()
+    os.set_blocking(wake_r, False)
+
+    ep = select.epoll()
+    ep.register(sock.fileno(), select.EPOLLIN)
+    ep.register(wake_r, select.EPOLLIN)
+
     def _listener():
-        while running_check():
-            try:
-                data = sock.recv(4096)
-            except socket.timeout:
-                continue
-            except OSError as e:
-                if running_check():
-                    log.warning('Netlink recv error: %s', e)
-                break
+        try:
+            while running_check():
+                try:
+                    events = ep.poll(timeout=5.0)
+                except OSError:
+                    if running_check():
+                        break
+                    return
 
-            if b'NVME_AEN=' not in data:
-                continue
+                for fd, _ in events:
+                    if fd == wake_r:
+                        return
+                    if fd == sock.fileno():
+                        try:
+                            data = sock.recv(4096)
+                        except OSError as e:
+                            if running_check():
+                                log.warning('Netlink recv error: %s', e)
+                            return
 
-            # Extract the AEN value for logging
-            for part in data.split(b'\0'):
-                if part.startswith(b'NVME_AEN='):
-                    log.info('Kernel AEN uevent: %s', part.decode('ascii', errors='replace'))
-                    break
+                        if b'NVME_AEN=' not in data:
+                            continue
 
-            metrics.aen_sent_total += 1
-            wake_event.set()
+                        for part in data.split(b'\0'):
+                            if part.startswith(b'NVME_AEN='):
+                                log.info('Kernel AEN uevent: %s',
+                                         part.decode('ascii', errors='replace'))
+                                break
 
-        sock.close()
+                        metrics.aen_sent_total += 1
+                        wake_event.set()
+        finally:
+            ep.close()
+            sock.close()
+            os.close(wake_r)
+            os.close(wake_w)
 
     thread = Thread(target=_listener, daemon=True, name='aen-listener')
     thread.start()
-    log.info('AEN listener started (netlink uevent monitoring)')
+    log.info('AEN listener started (epoll-based netlink monitoring)')
+    return thread
+
+
+CONTROL_SOCKET_PATH = '/run/discovery-client-lite.sock'
+
+
+def start_control_listener(daemon, running_check) -> Optional[Thread]:
+    """Start a daemon thread that accepts commands on a Unix domain socket.
+
+    Enables runtime control via the CLI, e.g.:
+        discovery-client-lite set --ctrl-loss-tmo 1
+    """
+    sock_path = CONTROL_SOCKET_PATH
+    try:
+        os.unlink(sock_path)
+    except OSError:
+        pass
+
+    try:
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        srv.bind(sock_path)
+        os.chmod(sock_path, 0o660)
+        srv.listen(2)
+        srv.settimeout(1.0)
+    except OSError as e:
+        log.warning('Cannot open control socket %s: %s', sock_path, e)
+        return None
+
+    def _handle(conn):
+        try:
+            data = conn.recv(4096)
+            if not data:
+                return
+            request = json.loads(data.decode())
+            response = daemon.handle_control_command(request)
+            conn.sendall(json.dumps(response).encode() + b'\n')
+        except Exception as e:
+            try:
+                conn.sendall(json.dumps({'ok': False, 'error': str(e)}).encode() + b'\n')
+            except OSError:
+                pass
+        finally:
+            conn.close()
+
+    def _listener():
+        while running_check():
+            try:
+                conn, _ = srv.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            _handle(conn)
+        srv.close()
+        try:
+            os.unlink(sock_path)
+        except OSError:
+            pass
+
+    thread = Thread(target=_listener, daemon=True, name='control-listener')
+    thread.start()
+    log.info('Control socket listening on %s', sock_path)
     return thread
 
 
 class DiscoveryDaemon:
-    """Discovery daemon using nvme connect-all --persistent with failover.
+    """Discovery daemon using nvme discover + nvme connect.
 
-    The kernel manages persistent discovery controllers and reacts to AEN
-    for topology changes. The daemon's role is config management, endpoint
-    failover, and adopting existing persistent controllers on restart to
-    prevent duplicate connections.
+    Each poll cycle (or AEN trigger), the daemon reads discovery service
+    endpoints from /etc/nvme/discovery.conf, runs 'nvme discover' to
+    find IO targets, and 'nvme connect' for each.  The daemon manages
+    reconnection; the kernel manages the individual TCP connections.
     """
 
     def __init__(
         self,
-        config_dir: str,
         cache_file: str,
         poll_interval: int,
         ctrl_loss_tmo: int,
@@ -108,15 +209,10 @@ class DiscoveryDaemon:
         dhchap_secret: str = '',
         dhchap_ctrl_secret: str = '',
         nvme_host_id_path: str = '/etc/nvme/hostid',
-        auto_detect_enabled: bool = True,
-        auto_detect_filename: str = 'detected-io-controllers',
     ):
-        self.config_dir = config_dir
         self.cache_file = cache_file
         self.poll_interval = poll_interval
         self.ctrl_loss_tmo = ctrl_loss_tmo
-        self.reconnect_delay = 10  # matches the value passed to nvme connect-all
-        self.reconnect_grace = self.reconnect_delay * RECONNECT_GRACE_MULTIPLIER
         self.discovery_port = discovery_port
         self.kato = kato
         self.nr_io_queues = nr_io_queues
@@ -125,8 +221,6 @@ class DiscoveryDaemon:
         self.dhchap_secret = dhchap_secret
         self.dhchap_ctrl_secret = dhchap_ctrl_secret
         self.nvme_host_id_path = nvme_host_id_path
-        self.auto_detect_enabled = auto_detect_enabled
-        self.auto_detect_filename = auto_detect_filename
         self.running = True
         self._aen_event = Event()
         self.host_id = get_host_id(nvme_host_id_path)
@@ -137,22 +231,40 @@ class DiscoveryDaemon:
         # Referral cache (shared across clusters)
         self.referrals: List[CachedReferral] = []
 
-        # Track config files → endpoints for disconnect-on-removal
-        self.prev_config_files: Dict[str, List[Endpoint]] = {}
+    def handle_control_command(self, request: dict) -> dict:
+        """Process a command received on the control socket."""
+        cmd = request.get('command')
+        if cmd == 'set':
+            return self._handle_set(request)
+        return {'ok': False, 'error': 'unknown command: %s' % cmd}
 
-    def shutdown(self, signum, frame):
+    def _handle_set(self, request: dict) -> dict:
+        key = request.get('key')
+        value = request.get('value')
+        if key == 'ctrl_loss_tmo':
+            try:
+                tmo = int(value)
+            except (TypeError, ValueError):
+                return {'ok': False, 'error': 'ctrl_loss_tmo must be an integer'}
+            self.ctrl_loss_tmo = tmo
+            count = set_ctrl_loss_tmo_sysfs(tmo)
+            log.info('ctrl_loss_tmo set to %d (updated %d controllers via sysfs)', tmo, count)
+            return {'ok': True, 'message': 'ctrl_loss_tmo=%d on %d controllers' % (tmo, count)}
+        return {'ok': False, 'error': 'unknown key: %s' % key}
+
+    def shutdown(self, signum, _frame=None):
         """Signal handler for graceful shutdown."""
         log.info('Received signal %d, shutting down...', signum)
         self.running = False
         self._aen_event.set()
 
-    def get_cluster(self, subnqn: str) -> ClusterState:
-        """Get or create cluster state for a subnqn."""
-        if subnqn not in self.clusters:
-            self.clusters[subnqn] = ClusterState(subnqn=subnqn)
-        return self.clusters[subnqn]
+    def get_cluster(self, cluster_key: str) -> ClusterState:
+        """Get or create cluster state keyed by (hostnqn, subnqn) string."""
+        if cluster_key not in self.clusters:
+            self.clusters[cluster_key] = ClusterState(subnqn=cluster_key)
+        return self.clusters[cluster_key]
 
-    def _get_effective_hostid(self, endpoint: Endpoint) -> str:
+    def _get_effective_hostid(self, endpoint: Endpoint, hostid_map: dict) -> str:
         """Return the effective hostid for an endpoint.
 
         If controllers are already connected with the same hostnqn but a
@@ -160,13 +272,16 @@ class DiscoveryDaemon:
         them. This matches the Go discovery-client's MaybeUpdateHostIDs
         behavior: the kernel rejects new controllers for the same hostnqn
         with a different hostid, so we must use what's already established.
+
+        Args:
+            endpoint: The endpoint being configured.
+            hostid_map: Pre-cached hostnqn -> hostid map from sysfs.
         """
         configured = endpoint.hostid or self.host_id
         if not endpoint.hostnqn:
             return configured
 
-        connected = get_connected_hostids()
-        existing = connected.get(endpoint.hostnqn, '')
+        existing = hostid_map.get(endpoint.hostnqn, '')
         if existing and existing != configured:
             log.info(
                 'Overriding hostid for %s: configured=%s effective=%s',
@@ -177,52 +292,95 @@ class DiscoveryDaemon:
             return existing
         return configured
 
-    def try_connect_all(self, endpoint: Endpoint) -> bool:
-        """Try connect-all against an endpoint. Returns True on success."""
+    def discover_and_connect(self, endpoint: Endpoint, connected: set,
+                             hostid_map: dict) -> bool:
+        """Discover targets via an endpoint, connect only new ones.
+
+        Uses 'nvme discover' to fetch the log page, then 'nvme connect'
+        for each IO target not already in the ``connected`` set.
+
+        Args:
+            endpoint: Discovery endpoint to query.
+            connected: Set of (traddr, trsvcid, subnqn) tuples already
+                       connected in sysfs.  Targets in this set are skipped.
+            hostid_map: Pre-cached hostnqn -> hostid map from sysfs.
+        """
         metrics.connect_attempts_total += 1
         tmo = endpoint.ctrl_loss_tmo or self.ctrl_loss_tmo
-        effective_hostid = self._get_effective_hostid(endpoint)
+        effective_hostid = self._get_effective_hostid(endpoint, hostid_map)
 
-        log.info('Trying connect-all to %s:%s', endpoint.traddr, endpoint.port)
-        success, output = NvmeCli.connect_all(
+        log.info('Discovering targets via %s:%s', endpoint.traddr, endpoint.port)
+        output = NvmeCli.discover(
             traddr=endpoint.traddr,
-            port=endpoint.port,
+            trsvcid=endpoint.port,
             hostnqn=endpoint.hostnqn,
             hostid=effective_hostid,
-            secret=endpoint.secret or self.dhchap_secret,
-            ctrl_secret=endpoint.ctrl_secret or self.dhchap_ctrl_secret,
-            ctrl_loss_tmo=tmo,
-            kato=self.kato,
-            nr_io_queues=self.nr_io_queues,
         )
 
-        if not success:
+        if output is None:
             metrics.connect_failures_total += 1
-            log.warning('connect-all failed for %s:%s', endpoint.traddr, endpoint.port)
+            log.warning('discover failed for %s:%s', endpoint.traddr, endpoint.port)
             return False
 
-        cluster = self.get_cluster(endpoint.subnqn)
+        # Connect only to IO targets not already connected
+        io_targets = extract_io_targets(output)
+
+        # Warn if config subnqn doesn't match what the discovery service returns
+        if endpoint.subnqn and io_targets:
+            mismatched = {t.subnqn for t in io_targets if t.subnqn != endpoint.subnqn}
+            if mismatched:
+                log.warning(
+                    'Config subnqn %s does not match discovered subnqns %s '
+                    'from %s:%s — config may be stale',
+                    endpoint.subnqn, mismatched, endpoint.traddr, endpoint.port,
+                )
+
+        new_targets = [t for t in io_targets
+                       if (t.traddr, t.trsvcid, t.subnqn) not in connected]
+        skipped = len(io_targets) - len(new_targets)
+        new_connected = 0
+        for target in new_targets:
+            result = NvmeCli.connect(
+                traddr=target.traddr,
+                trsvcid=target.trsvcid,
+                hostnqn=endpoint.hostnqn,
+                hostid=effective_hostid,
+                nqn=target.subnqn,
+                ctrl_loss_tmo=tmo,
+                dhchap_secret=endpoint.secret or self.dhchap_secret,
+                dhchap_ctrl_secret=endpoint.ctrl_secret or self.dhchap_ctrl_secret,
+            )
+            if result is not None:
+                new_connected += 1
+            else:
+                log.debug('connect to %s:%s (%s) failed',
+                          target.traddr, target.trsvcid, target.subnqn)
+
+        cluster_key = '%s/%s' % (endpoint.hostnqn, endpoint.subnqn)
+        cluster = self.get_cluster(cluster_key)
         cluster.active_endpoint = (endpoint.traddr, endpoint.port)
         log.info(
-            'connect-all succeeded for %s:%s (cluster: %s)',
+            'discover via %s:%s: %d IO targets (%d new, %d already connected) (cluster: %s)',
             endpoint.traddr,
             endpoint.port,
-            endpoint.subnqn or 'default',
+            len(io_targets),
+            new_connected,
+            skipped,
+            cluster_key or 'default',
         )
 
         # Extract and cache referrals
-        if output:
-            new_refs = extract_referrals(output)
-            existing_keys = {r.to_key() for r in self.referrals}
-            added = False
-            for ref in new_refs:
-                if ref.to_key() not in existing_keys:
-                    log.info('New referral: %s at %s:%s', ref.subnqn, ref.traddr, ref.port)
-                    self.referrals.append(ref)
-                    added = True
-            if added:
-                metrics.targets_map_id += 1
-                save_referral_cache(self.cache_file, self.referrals)
+        new_refs = extract_referrals(output)
+        existing_keys = {r.to_key() for r in self.referrals}
+        added = False
+        for ref in new_refs:
+            if ref.to_key() not in existing_keys:
+                log.info('New referral: %s at %s:%s', ref.subnqn, ref.traddr, ref.port)
+                self.referrals.append(ref)
+                added = True
+        if added:
+            metrics.targets_map_id += 1
+            save_referral_cache(self.cache_file, self.referrals)
 
         return True
 
@@ -236,195 +394,109 @@ class DiscoveryDaemon:
             log.info('Expired %d stale referrals', expired)
             save_referral_cache(self.cache_file, self.referrals)
 
-    def handle_config_removal(self, current_files: Dict[str, List[Endpoint]]):
-        """Disconnect controllers whose config file was removed."""
-        removed_files = set(self.prev_config_files.keys()) - set(current_files.keys())
-        if not removed_files:
-            return
-
-        controllers = get_connected_controllers()
-        for filename in removed_files:
-            log.info('Config file removed: %s, disconnecting associated controllers', filename)
-            for ep in self.prev_config_files[filename]:
-                for ctrl in controllers:
-                    if (
-                        ctrl.traddr == ep.traddr
-                        and ctrl.port == ep.port
-                        and (not ep.hostnqn or ctrl.hostnqn == ep.hostnqn)
-                    ):
-                        log.info(
-                            'Disconnecting %s (%s at %s:%s)',
-                            ctrl.device,
-                            ctrl.subnqn,
-                            ctrl.traddr,
-                            ctrl.port,
-                        )
-                        NvmeCli.disconnect(ctrl.device)
-
-                # Clear cluster active endpoint if it matches
-                cluster = self.get_cluster(ep.subnqn)
-                if cluster.active_endpoint == (ep.traddr, ep.port):
-                    cluster.active_endpoint = None
-
     def poll_cycle(self):
-        """Single poll cycle: check health, failover, handle config changes."""
-        live_discovery = get_discovery_controllers()
+        """Single poll cycle: discover targets, connect to new ones.
+
+        Uses a single-active-endpoint model per cluster: for each cluster
+        (identified by subnqn), try the previously active endpoint first.
+        If it succeeds, move on.  If it fails, try remaining endpoints in
+        shuffled order until one succeeds.  Only new IO targets (not already
+        connected in sysfs) trigger an ``nvme connect`` subprocess call.
+        """
         all_controllers = get_connected_controllers()
 
-        # Update metrics
-        io_count = sum(1 for c in all_controllers if c.subnqn != DISCOVERY_SUBNQN)
-        metrics.tcp_targets_total = io_count
-        metrics.tcp_server_serving_states = len(live_discovery)
+        # Build set of already-connected IO targets for skip logic
+        connected = set()
+        for c in all_controllers:
+            if c.subnqn != DISCOVERY_SUBNQN:
+                connected.add((c.traddr, c.port, c.subnqn))
 
-        # Per-hostnqn target counts
-        hostnqn_counts: Dict[str, int] = {}
+        # Cache hostid map once per cycle (avoids repeated sysfs scans)
+        hostid_map = get_connected_hostids()
+
+        # Metrics
+        metrics.tcp_targets_total = len(connected)
+        hostnqn_counts = {}
         for c in all_controllers:
             if c.subnqn != DISCOVERY_SUBNQN and c.hostnqn:
                 hostnqn_counts[c.hostnqn] = hostnqn_counts.get(c.hostnqn, 0) + 1
         metrics.targets_per_hostnqn = hostnqn_counts
 
-        # Read config and handle removals
-        current_config = read_config_dir(self.config_dir)
-        self.handle_config_removal(current_config)
-        self.prev_config_files = current_config
+        # Read endpoints
+        endpoints = read_discovery_conf()
+        metrics.tcp_queues_total = len(endpoints)
 
-        # Flatten all endpoints
-        all_endpoints = [ep for eps in current_config.values() for ep in eps]
-        metrics.tcp_queues_total = len(all_endpoints)
-
-        # Group endpoints by cluster (subnqn)
-        endpoints_by_cluster: Dict[str, List[Endpoint]] = {}
-        for ep in all_endpoints:
-            endpoints_by_cluster.setdefault(ep.subnqn, []).append(ep)
-
-        # Add referrals as fallback endpoints per cluster
+        # Add referrals as additional endpoints (inherit creds from donor)
+        endpoints_by_hostnqn = {}
+        for ep in endpoints:
+            endpoints_by_hostnqn.setdefault(ep.hostnqn, []).append(ep)
         for ref in self.referrals:
-            # Inherit credentials from the referral's own cluster if possible,
-            # otherwise fall back to the first configured endpoint
-            cluster_eps = endpoints_by_cluster.get(ref.subnqn, [])
-            donor_ep = (
-                cluster_eps[0] if cluster_eps else (all_endpoints[0] if all_endpoints else None)
-            )
-            if donor_ep:
-                ref_ep = Endpoint(
-                    traddr=ref.traddr,
-                    port=ref.port,
-                    hostnqn=donor_ep.hostnqn,
-                    subnqn=ref.subnqn,
-                    secret=donor_ep.secret,
-                    ctrl_secret=donor_ep.ctrl_secret,
-                    hostid=donor_ep.hostid,
-                )
-                endpoints_by_cluster.setdefault(ref.subnqn, []).append(ref_ep)
+            # Find a donor to inherit hostnqn and credentials from
+            donor = None
+            for hostnqn_eps in endpoints_by_hostnqn.values():
+                donor = hostnqn_eps[0]
+                break
+            if donor:
+                endpoints.append(Endpoint(
+                    traddr=ref.traddr, port=ref.port,
+                    hostnqn=donor.hostnqn, subnqn=ref.subnqn,
+                    secret=donor.secret, ctrl_secret=donor.ctrl_secret,
+                    hostid=donor.hostid, ctrl_loss_tmo=donor.ctrl_loss_tmo,
+                ))
 
-        # Per-cluster: check active controller, failover if needed
-        for subnqn, endpoints in endpoints_by_cluster.items():
-            cluster = self.get_cluster(subnqn)
-            cluster.endpoints = endpoints
+        # Deduplicate by (traddr, port)
+        seen = set()
+        unique = []
+        for ep in endpoints:
+            key = (ep.traddr, ep.port)
+            if key not in seen:
+                seen.add(key)
+                unique.append(ep)
 
-            # Check if active controller is still alive
-            if cluster.active_endpoint and cluster.active_endpoint in live_discovery:
-                cluster.reconnecting_since = None
-                log.debug(
-                    'Cluster %s: active controller %s:%s alive',
-                    subnqn or 'default',
-                    *cluster.active_endpoint,
-                )
-                continue
+        # Group endpoints by (hostnqn, subnqn) — same client + same cluster
+        # are redundant; same client + different cluster are independent.
+        clusters: Dict[str, List[Endpoint]] = {}
+        for ep in unique:
+            key = '%s/%s' % (ep.hostnqn, ep.subnqn)
+            clusters.setdefault(key, []).append(ep)
 
-            # Active endpoint lost or not yet set (e.g., after daemon restart).
-            # Before calling connect-all, check if the kernel already has a
-            # persistent discovery controller for one of our endpoints. This
-            # prevents duplicate persistent controllers when the daemon
-            # restarts while the kernel is still maintaining connections from
-            # the previous daemon instance.
-            adopted = False
-            for ep in endpoints:
-                if (ep.traddr, ep.port) in live_discovery:
-                    cluster.active_endpoint = (ep.traddr, ep.port)
-                    cluster.reconnecting_since = None
-                    log.info(
-                        'Cluster %s: adopted existing persistent controller %s:%s',
-                        subnqn or 'default',
-                        ep.traddr,
-                        ep.port,
-                    )
-                    adopted = True
-                    break
+        # Discover through one endpoint per cluster (single-active model)
+        for cluster_key, cluster_eps in clusters.items():
+            cluster = self.get_cluster(cluster_key)
+            active = cluster.active_endpoint
 
-            if adopted:
-                continue
-
-            # Active endpoint is gone and no existing controller found.
-            # Give the kernel a grace period to finish reconnecting the
-            # persistent controller before we failover and create a new one.
-            # This avoids duplicate controllers when a network blip causes
-            # the controller to briefly disappear from sysfs.
-            if cluster.active_endpoint:
-                now = time.monotonic()
-                if cluster.reconnecting_since is None:
-                    cluster.reconnecting_since = now
-                    log.info(
-                        'Cluster %s: active controller %s:%s not visible, '
-                        'waiting for kernel reconnect (grace period %ds)',
-                        subnqn or 'default',
-                        *cluster.active_endpoint,
-                        self.reconnect_grace,
-                    )
-                    continue
-
-                elapsed = now - cluster.reconnecting_since
-                if elapsed < self.reconnect_grace:
-                    log.debug(
-                        'Cluster %s: still waiting for reconnect (%.0fs / %ds)',
-                        subnqn or 'default',
-                        elapsed,
-                        self.reconnect_grace,
-                    )
-                    continue
-
-                old_addr, old_port = cluster.active_endpoint
-                log.warning(
-                    'Cluster %s: active controller %s:%s lost after %ds, failing over',
-                    subnqn or 'default',
-                    old_addr,
-                    old_port,
-                    self.reconnect_grace,
-                )
-                # Disconnect ALL discovery controllers by NQN to get a clean
-                # slate. Individual disconnect-by-device doesn't cancel
-                # kernel persistent reconnection. Disconnect-by-NQN is a
-                # single kernel operation that clears all discovery state.
-                # The subsequent connect-all will create a fresh persistent
-                # controller to the new endpoint.
-                NvmeCli.disconnect_by_nqn(DISCOVERY_SUBNQN)
-                cluster.active_endpoint = None
-                cluster.reconnecting_since = None
-                metrics.failovers_total += 1
-
-            # No existing persistent controller — create one
-            candidates = list(endpoints)
-            random.shuffle(candidates)
-            for ep in candidates:
-                if self.try_connect_all(ep):
-                    break
+            # Try active endpoint first if it's still in the list
+            ordered = list(cluster_eps)
+            if active:
+                active_ep = None
+                rest = []
+                for ep in ordered:
+                    if (ep.traddr, ep.port) == active:
+                        active_ep = ep
+                    else:
+                        rest.append(ep)
+                if active_ep:
+                    random.shuffle(rest)
+                    ordered = [active_ep] + rest
+                else:
+                    random.shuffle(ordered)
             else:
-                if endpoints:
-                    log.warning(
-                        'Cluster %s: all %d endpoints unreachable',
-                        subnqn or 'default',
-                        len(endpoints),
-                    )
+                random.shuffle(ordered)
 
-        # Expire stale referrals
+            success = False
+            for ep in ordered:
+                if self.discover_and_connect(ep, connected, hostid_map):
+                    success = True
+                    break
+                log.info('Cluster %s: endpoint %s:%s failed, trying next',
+                         cluster_key, ep.traddr, ep.port)
+
+            if not success:
+                log.warning('Cluster %s: all %d endpoints unreachable',
+                            cluster_key, len(cluster_eps))
+
         self.expire_referrals()
-
-        # Clean up clusters with no endpoints
-        empty = [k for k, v in self.clusters.items() if not v.endpoints]
-        for k in empty:
-            del self.clusters[k]
-
-        metrics.clusters_tracked = len(self.clusters)
+        metrics.clusters_tracked = len(clusters)
 
     def run(self, aen_enabled: bool = True):
         """Main daemon loop."""
@@ -432,7 +504,7 @@ class DiscoveryDaemon:
         signal.signal(signal.SIGINT, self.shutdown)
 
         log.info('discovery-client-lite starting')
-        log.info('Config dir: %s', self.config_dir)
+        log.info('Discovery conf: %s', DISCOVERY_CONF)
         log.info('Poll interval: %ds', self.poll_interval)
         log.info('Ctrl loss timeout: %ds', self.ctrl_loss_tmo)
         log.info('Referral TTL: %ds', self.referral_ttl)
@@ -451,9 +523,11 @@ class DiscoveryDaemon:
         else:
             log.info('AEN listener disabled, using poll-only mode')
 
-        Path(self.config_dir).mkdir(parents=True, exist_ok=True)
-        if self.auto_detect_enabled:
-            auto_detect_endpoints(self.config_dir, self.discovery_port, self.auto_detect_filename)
+        # Start control socket for runtime commands
+        start_control_listener(self, lambda: self.running)
+
+        # Ensure discovery.conf parent dir exists
+        Path(DISCOVERY_CONF).parent.mkdir(parents=True, exist_ok=True)
         self.referrals = load_referral_cache(self.cache_file)
 
         # Initial connection attempt
@@ -488,12 +562,11 @@ class DiscoveryDaemon:
                 metrics.poll_cycle_errors_total += 1
             metrics.poll_cycle_duration.observe(time.monotonic() - start)
 
-        # Disconnect persistent discovery controllers by NQN so the kernel
-        # cancels persistent reconnection. Only discovery controllers — NOT
-        # IO controllers. IO connections must survive daemon restarts (that's
-        # the point of --persistent). The test framework or operator handles
-        # IO teardown separately via nvme disconnect-all.
-        log.info('Disconnecting all discovery controllers on shutdown')
+        # Disconnect discovery controllers on shutdown.  Since we don't use
+        # --persistent, there's no kernel-level persistent state to clean up.
+        # IO connections are left intact — the kernel manages them independently
+        # and they survive daemon restarts.
+        log.info('Disconnecting discovery controllers on shutdown')
         NvmeCli.disconnect_by_nqn(DISCOVERY_SUBNQN)
 
         sd_notify('STOPPING=1')
