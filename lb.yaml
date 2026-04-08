@@ -15,6 +15,14 @@ discovery-client:
     - file://service
     - file://vendor
 
+  discovery-client-lite:
+    install:
+    - make install-discovery-client-lite
+    deps:
+    - file://discovery-client-lite.py
+    - file://etc/systemd/system/discovery-client-lite.service
+    - file://etc/systemd/system/discovery-client-lite-watcher.path
+
   discovery-client-packages-el8:
     build:
     - make discovery-packages-el8 -f Makefile.lb
