@@ -15,15 +15,6 @@ discovery-client:
     - file://service
     - file://vendor
 
-  discovery-client-lite:
-    build: []
-    install:
-    - make install-discovery-client-lite
-    deps:
-    - file://lite/discovery_client_lite
-    - file://lite/bin
-    - file://etc
-
   discovery-client-packages-el8:
     build:
     - make discovery-packages-el8 -f Makefile.lb

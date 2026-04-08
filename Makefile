@@ -172,23 +172,11 @@ install-discovery-client:
 	$(Q)cp -Rf ./etc/ $(COMPONENT_PATH)/
 	echo "Installed discovery-client component"
 
-install-discovery-client-lite: COMPONENT_PATH = $(shell component-tool localpath --repo=discovery-client --type=$(BUILD_TYPE) discovery-client-lite)
-install-discovery-client-lite:
-	$(Q)rm -rf $(COMPONENT_PATH)/*
-	$(Q)mkdir -p $(COMPONENT_PATH)/usr/bin/
-	$(Q)mkdir -p $(COMPONENT_PATH)/usr/lib/discovery-client-lite/
-	$(Q)cp lite/bin/discovery-client-lite $(COMPONENT_PATH)/usr/bin/
-	$(Q)chmod +x $(COMPONENT_PATH)/usr/bin/discovery-client-lite
-	$(Q)cp -R lite/discovery_client_lite/ $(COMPONENT_PATH)/usr/lib/discovery-client-lite/
-	$(Q)cp -Rf ./etc/ $(COMPONENT_PATH)/
-	echo "Installed discovery-client-lite component"
-
 .PHONY: discovery-rpms-% discovery-client-debs-%\
 	discovery-packages-el8 \
 	discovery-packages-el9 \
 	install-discovery-client-packages-% \
-	install-discovery-client \
-	install-discovery-client-lite clean
+	install-discovery-client clean
 
 build/coverage:
 	mkdir -p build/coverage
