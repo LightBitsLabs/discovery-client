@@ -5,9 +5,8 @@ import json
 import logging
 import logging.handlers
 import os
-import socket as _socket
 import sys
-
+from pathlib import Path
 from typing import Tuple
 
 from .nvme import NvmeCli
@@ -35,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Backward-compat direct CLI flags on the root parser so that
     # `discovery-client-lite.py --interval 5` still works without a subcommand.
+    parser.add_argument('--config-dir', dest='config_dir', default=None)
     parser.add_argument('--cache-file', default=None)
     parser.add_argument('--interval', type=int, default=None)
     parser.add_argument('--ctrl-loss-tmo', type=int, default=None)
@@ -67,12 +67,23 @@ def build_parser() -> argparse.ArgumentParser:
     serve_p.add_argument('--debug.endpoint', dest='debug_endpoint', default=None)
     serve_p.add_argument('--debug.enablepprof', dest='debug_enablepprof', default=None)
     serve_p.add_argument('--debug.metrics', dest='debug_metrics', default=None)
+    serve_p.add_argument('--clientConfigDir', dest='config_dir', default=None)
     serve_p.add_argument('--internalDir', dest='internal_dir', default=None)
     serve_p.add_argument('--nvmeHostIDPath', dest='nvme_host_id_path', default=None)
     serve_p.add_argument('--pollingInterval', dest='polling_interval', default=None)
     serve_p.add_argument('--maxIOQueues', dest='max_io_queues', type=int, default=None)
     serve_p.add_argument('--kato', type=int, default=None)
+    serve_p.add_argument(
+        '-e', '--autoDetectEntries.enabled', dest='autodetect_enabled', default=None
+    )
+    serve_p.add_argument(
+        '-f', '--autoDetectEntries.filename', dest='autodetect_filename', default=None
+    )
+    serve_p.add_argument(
+        '-p', '--autoDetectEntries.discoveryServicePort', dest='autodetect_port', default=None
+    )
     # Backward-compat direct CLI flags
+    serve_p.add_argument('--config-dir', dest='config_dir_compat', default=None)
     serve_p.add_argument('--cache-file', default=None)
     serve_p.add_argument('--interval', type=int, default=None)
     serve_p.add_argument('--ctrl-loss-tmo', type=int, default=None)
@@ -115,6 +126,21 @@ def build_parser() -> argparse.ArgumentParser:
     conn_p.add_argument('-S', '--dhchap-secret', default='')
     conn_p.add_argument('-C', '--dhchap-ctrl-secret', default='')
 
+    # --- connect-all ---
+    ca_p = sub.add_parser(
+        'connect-all', help='Discover and connect to all subsystems', parents=[global_parent]
+    )
+    ca_p.add_argument('-a', '--traddr', required=True)
+    ca_p.add_argument('-s', '--trsvcid', type=int, default=8009)
+    ca_p.add_argument('-q', '--hostnqn', default='')
+    ca_p.add_argument('-I', '--hostid', default='')
+    ca_p.add_argument('-t', '--transport', default='tcp')
+    ca_p.add_argument('-w', '--host-traddr', default='')
+    ca_p.add_argument('-p', '--persistant', action='store_true', default=False)
+    ca_p.add_argument('-m', '--max-queues', type=int, default=0)
+    ca_p.add_argument('--ctrl-loss-tmo', type=int, default=-1)
+    ca_p.add_argument('-k', '--kato', type=int, default=0)
+
     # --- disconnect ---
     dc_p = sub.add_parser(
         'disconnect', help='Disconnect an NVMe controller', parents=[global_parent]
@@ -142,15 +168,6 @@ def build_parser() -> argparse.ArgumentParser:
         'remove-hostnqn', help='Remove a discovery config entry', parents=[global_parent]
     )
     rh_p.add_argument('-n', '--name', required=True)
-
-    # --- set (runtime control) ---
-    set_p = sub.add_parser('set', help='Change daemon settings at runtime', parents=[global_parent])
-    set_p.add_argument(
-        '--ctrl-loss-tmo',
-        type=int,
-        default=None,
-        help='Set ctrl_loss_tmo on all controllers (sysfs + future connects)',
-    )
 
     # --- list ctrl ---
     list_p = sub.add_parser('list', help='List resources', parents=[global_parent])
@@ -199,6 +216,23 @@ def cmd_connect(args):
     return 1
 
 
+def cmd_connect_all(args):
+    success, output = NvmeCli.connect_all(
+        traddr=args.traddr,
+        port=str(args.trsvcid),
+        hostnqn=getattr(args, 'hostnqn', ''),
+        hostid=getattr(args, 'hostid', ''),
+        ctrl_loss_tmo=args.ctrl_loss_tmo,
+        nr_io_queues=args.max_queues,
+        persistent=args.persistant,
+        kato=args.kato,
+    )
+    if success and output:
+        print(json.dumps(output, indent=2))
+        return 0
+    return 0 if success else 1
+
+
 def cmd_disconnect(args):
     if NvmeCli.disconnect(args.device):
         return 0
@@ -223,13 +257,12 @@ def _split_host_port(address: str) -> Tuple[str, str]:
     return address, '8009'
 
 
-def cmd_add_hostnqn(args):
-    from .nvme import append_discovery_conf
-
+def cmd_add_hostnqn(args, config_dir: str):
     if args.name.startswith('tmp.dc.'):
         print('error: name cannot start with "tmp.dc."', file=sys.stderr)
         return 1
 
+    # Split comma-separated addresses (matching Go's StringSliceP behavior)
     all_addrs = []
     for a in args.addresses:
         all_addrs.extend(a.split(','))
@@ -245,50 +278,20 @@ def cmd_add_hostnqn(args):
             line += f' -I {args.hostid}'
         lines.append(line)
 
-    append_discovery_conf(args.name, lines)
-    print(json.dumps({'name': args.name}))
+    filepath = os.path.join(config_dir, args.name)
+    Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+    Path(filepath).write_text('\n'.join(lines) + '\n')
+    print(json.dumps({'name': filepath}))
     return 0
 
 
-def cmd_remove_hostnqn(args):
-    from .nvme import remove_named_lines
-    removed = remove_named_lines(args.name)
-    print(json.dumps({'name': args.name, 'removed': removed}))
-    return 0
-
-
-def cmd_set(args):
-    """Send a 'set' command to the running daemon via its control socket."""
-    from .daemon import CONTROL_SOCKET_PATH
-
-    pairs = {}
-    if args.ctrl_loss_tmo is not None:
-        pairs['ctrl_loss_tmo'] = args.ctrl_loss_tmo
-
-    if not pairs:
-        print('error: no setting specified (use --ctrl-loss-tmo)', file=sys.stderr)
-        return 1
-
-    for key, value in pairs.items():
-        request = json.dumps({'command': 'set', 'key': key, 'value': value})
-        try:
-            s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
-            s.settimeout(5)
-            s.connect(CONTROL_SOCKET_PATH)
-            s.sendall(request.encode())
-            response = json.loads(s.recv(4096).decode())
-            s.close()
-        except (OSError, ConnectionRefusedError) as e:
-            print(
-                'error: cannot reach daemon at %s: %s' % (CONTROL_SOCKET_PATH, e), file=sys.stderr
-            )
-            return 1
-
-        if response.get('ok'):
-            print(response.get('message', 'ok'))
-        else:
-            print('error: %s' % response.get('error', 'unknown'), file=sys.stderr)
-            return 1
+def cmd_remove_hostnqn(args, config_dir: str):
+    filepath = os.path.join(config_dir, args.name)
+    try:
+        os.unlink(filepath)
+    except FileNotFoundError:
+        pass
+    print(json.dumps({'name': filepath}))
     return 0
 
 
@@ -344,6 +347,12 @@ def run_serve(args):
                 return val
         return None
 
+    config_dir = pick(
+        cli_arg('config_dir', 'config_dir_compat'),
+        env_conf.get('clientConfigDir'),
+        yaml_conf.get('clientConfigDir'),
+        '/etc/discovery-client/discovery.d',
+    )
     cache_dir_env = env_conf.get('internalDir')
     cache_dir = pick(
         cli_arg('internal_dir'),
@@ -381,7 +390,7 @@ def run_serve(args):
         0,
     )
     discovery_port = pick(
-        cli_arg('discovery_port'),
+        cli_arg('discovery_port', 'autodetect_port'),
         env_conf.get('autoDetectEntries.discoveryServicePort'),
         None,
         str(yaml_conf.get('autoDetectEntries', {}).get('discoveryServicePort', 8009)),
@@ -447,6 +456,23 @@ def run_serve(args):
     else:
         log_format = '%(asctime)s %(levelname)-5s %(message)s'
 
+    autodetect_conf = yaml_conf.get('autoDetectEntries', {})
+    autodetect_enabled = pick(
+        getattr(args, 'autodetect_enabled', None),
+        env_bool(env_conf.get('autoDetectEntries.enabled')),
+        autodetect_conf.get('enabled'),
+        True,
+    )
+    if isinstance(autodetect_enabled, str):
+        autodetect_enabled = autodetect_enabled.lower() in ('true', '1', 'yes')
+
+    autodetect_filename = pick(
+        getattr(args, 'autodetect_filename', None),
+        env_conf.get('autoDetectEntries.filename'),
+        autodetect_conf.get('filename'),
+        'detected-io-controllers',
+    )
+
     nvme_host_id_path = pick(
         getattr(args, 'nvme_host_id_path', None),
         env_conf.get('nvmeHostIDPath'),
@@ -485,10 +511,9 @@ def run_serve(args):
         log_dir = os.path.dirname(log_file)
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
-        handler = logging.handlers.TimedRotatingFileHandler(
+        handler = logging.handlers.RotatingFileHandler(
             log_file,
-            when='D',
-            interval=1,
+            maxBytes=log_max_size * 1024 * 1024,
             backupCount=log_backup_count,
         )
         log_handlers.append(handler)
@@ -523,6 +548,7 @@ def run_serve(args):
         log.info('pprof not available in Python build (use py-spy for profiling)')
 
     daemon = DiscoveryDaemon(
+        config_dir=config_dir,
         cache_file=cache_file,
         poll_interval=poll_interval,
         ctrl_loss_tmo=ctrl_loss_tmo,
@@ -534,5 +560,7 @@ def run_serve(args):
         dhchap_secret=dhchap_secret,
         dhchap_ctrl_secret=dhchap_ctrl_secret,
         nvme_host_id_path=nvme_host_id_path,
+        auto_detect_enabled=autodetect_enabled,
+        auto_detect_filename=autodetect_filename,
     )
     daemon.run(aen_enabled=aen_enabled)

@@ -44,6 +44,52 @@ class NvmeCli:
             return None
 
     @staticmethod
+    def connect_all(
+        traddr: str,
+        port: str,
+        hostnqn: str = '',
+        hostid: str = '',
+        secret: str = '',
+        ctrl_secret: str = '',
+        ctrl_loss_tmo: int = 3600,
+        reconnect_delay: int = 10,
+        nr_io_queues: int = 0,
+        persistent: bool = True,
+        kato: int = 10,
+    ) -> Tuple[bool, Optional[dict]]:
+        """Run nvme connect-all. Returns (success, discovery_log_json)."""
+        args = [
+            'connect-all',
+            '-t',
+            'tcp',
+            '-a',
+            traddr,
+            '-s',
+            port,
+            '--ctrl-loss-tmo=%d' % ctrl_loss_tmo,
+            '--reconnect-delay=%d' % reconnect_delay,
+        ]
+        if persistent:
+            args += ['--persistent']
+        if kato:
+            args += ['--keep-alive-tmo=%d' % kato]
+        if hostnqn:
+            args += ['-q', hostnqn]
+        if hostid:
+            args += ['-I', hostid]
+        if secret:
+            args += ['-S', secret]  # nvme-cli 2.x+ (DH-CHAP)
+        if ctrl_secret:
+            args += ['-C', ctrl_secret]  # nvme-cli 2.x+ (DH-CHAP bidirectional)
+        if nr_io_queues > 0:
+            args += ['--nr-io-queues=%d' % nr_io_queues]
+
+        output = NvmeCli._run_json(args)
+        if output is None:
+            return False, None
+        return True, output
+
+    @staticmethod
     def disconnect(device: str) -> bool:
         """Disconnect an NVMe controller by device name."""
         rc, _, stderr = NvmeCli._run(['disconnect', '-d', device])
@@ -116,12 +162,25 @@ class NvmeCli:
 
     @staticmethod
     def disconnect_all() -> bool:
-        """Disconnect all NVMe fabrics controllers."""
-        rc, _, stderr = NvmeCli._run(['disconnect-all'])
-        if rc != 0:
-            log.error('Disconnect-all failed: %s', stderr)
-            return False
-        return True
+        """Disconnect all NVMe fabrics controllers (matching Go behavior).
+
+        Iterates all controllers in /sys/class/nvme/, checks for
+        delete_controller sysfs path existence before disconnecting.
+        """
+        nvme_dir = Path('/sys/class/nvme')
+        if not nvme_dir.exists():
+            return True
+        success = True
+        for ctrl_path in sorted(nvme_dir.iterdir()):
+            if not ctrl_path.is_dir():
+                continue
+            delete_path = ctrl_path / 'delete_controller'
+            if not delete_path.exists():
+                continue
+            device = ctrl_path.name
+            if not NvmeCli.disconnect(device):
+                success = False
+        return success
 
     @staticmethod
     def list_controllers(discovery_only: bool = False) -> List[dict]:
@@ -144,24 +203,21 @@ class NvmeCli:
 
 # --- Sysfs reader ---
 
-NVME_FABRICS_CTL = Path('/sys/class/nvme-fabrics/ctl')
-
 
 def get_connected_controllers() -> List[ConnectedController]:
-    """Read currently connected NVMe fabrics controllers from sysfs.
-
-    Uses /sys/class/nvme-fabrics/ctl/ which only contains fabrics
-    controllers, avoiding the need to filter by transport.
-    """
+    """Read currently connected NVMe/TCP controllers from sysfs."""
     controllers = []
-    if not NVME_FABRICS_CTL.exists():
+    nvme_dir = Path('/sys/class/nvme')
+    if not nvme_dir.exists():
         return controllers
 
-    for ctrl_path in sorted(NVME_FABRICS_CTL.iterdir()):
-        if not ctrl_path.name.startswith('nvme'):
+    for ctrl_path in sorted(nvme_dir.iterdir()):
+        if not ctrl_path.is_dir():
             continue
         try:
             transport = (ctrl_path / 'transport').read_text().strip()
+            if transport != 'tcp':
+                continue
             address = (ctrl_path / 'address').read_text().strip()
             subnqn = (ctrl_path / 'subsysnqn').read_text().strip()
             hostnqn = (ctrl_path / 'hostnqn').read_text().strip()
@@ -189,50 +245,6 @@ def get_connected_controllers() -> List[ConnectedController]:
 
 
 DISCOVERY_SUBNQN = 'nqn.2014-08.org.nvmexpress.discovery'
-DISCOVERY_CONF = '/etc/nvme/discovery.conf'
-
-
-def _read_discovery_conf() -> List[str]:
-    """Read lines from /etc/nvme/discovery.conf."""
-    try:
-        return Path(DISCOVERY_CONF).read_text().splitlines()
-    except OSError:
-        return []
-
-
-def _write_discovery_conf(lines: List[str]):
-    """Write lines to /etc/nvme/discovery.conf."""
-    try:
-        Path(DISCOVERY_CONF).write_text('\n'.join(lines) + '\n' if lines else '')
-    except OSError as e:
-        log.warning('Cannot write %s: %s', DISCOVERY_CONF, e)
-
-
-DC_TAG_PREFIX = '# dc:'
-
-NAME_COMMENT_PREFIX = '# name='
-
-
-def append_discovery_conf(name: str, lines: List[str]):
-    """Append lines to discovery.conf, each tagged with # name=<name>."""
-    try:
-        with open(DISCOVERY_CONF, 'a') as f:
-            for line in lines:
-                f.write('%s %s%s\n' % (line.rstrip(), NAME_COMMENT_PREFIX, name))
-    except OSError as e:
-        log.warning('Cannot append to %s: %s', DISCOVERY_CONF, e)
-
-
-def remove_named_lines(name: str) -> int:
-    """Remove lines tagged with # name=<name> from discovery.conf."""
-    tag = '%s%s' % (NAME_COMMENT_PREFIX, name)
-    existing = _read_discovery_conf()
-    kept = [l for l in existing if tag not in l]
-    removed = len(existing) - len(kept)
-    if removed:
-        _write_discovery_conf(kept)
-        log.info('Removed %d lines for name=%s from %s', removed, name, DISCOVERY_CONF)
-    return removed
 
 
 def get_discovery_controllers() -> Set[Tuple[str, str]]:
@@ -252,25 +264,6 @@ def get_host_id(path: str = '/etc/nvme/hostid') -> str:
         return ''
 
 
-def set_ctrl_loss_tmo_sysfs(value: int) -> int:
-    """Set ctrl_loss_tmo on all TCP fabrics controllers via sysfs.
-
-    Returns the number of controllers updated.
-    """
-    count = 0
-    if not NVME_FABRICS_CTL.exists():
-        return count
-    for ctrl_path in sorted(NVME_FABRICS_CTL.iterdir()):
-        if not ctrl_path.name.startswith('nvme'):
-            continue
-        try:
-            (ctrl_path / 'ctrl_loss_tmo').write_text(str(value))
-            count += 1
-        except OSError:
-            continue
-    return count
-
-
 def get_connected_hostids() -> Dict[str, str]:
     """Scan all NVMe fabrics controllers and return hostnqn -> hostid map.
 
@@ -279,11 +272,12 @@ def get_connected_hostids() -> Dict[str, str]:
     they're using takes precedence over whatever the config says.
     """
     hosts: Dict[str, str] = {}
-    if not NVME_FABRICS_CTL.exists():
+    fabrics_dir = Path('/sys/class/nvme-fabrics/ctl')
+    if not fabrics_dir.exists():
         return hosts
 
-    for ctrl_path in sorted(NVME_FABRICS_CTL.iterdir()):
-        if not ctrl_path.name.startswith('nvme'):
+    for ctrl_path in sorted(fabrics_dir.iterdir()):
+        if not ctrl_path.is_dir():
             continue
         try:
             hostnqn = (ctrl_path / 'hostnqn').read_text().strip()

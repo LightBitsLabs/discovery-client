@@ -1,21 +1,15 @@
-"""Config parsing, referral cache, and environment overrides.
-
-The daemon reads discovery service endpoints from /etc/nvme/discovery.conf.
-Each line is a standard nvme-cli discovery config line:
-    -t tcp -a 10.0.0.1 -s 8009 -q hostnqn -n subnqn
-Lines may have a trailing # name=X comment for management by add/remove-hostnqn.
-"""
+"""Config parsing, referral cache, and environment overrides."""
 
 import json
 import logging
 import os
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from .models import Endpoint, CachedReferral
-from .nvme import get_connected_controllers, DISCOVERY_SUBNQN, DISCOVERY_CONF
+from .nvme import get_connected_controllers, DISCOVERY_SUBNQN
 
 log = logging.getLogger('discovery-client-lite')
 
@@ -84,23 +78,68 @@ def parse_config_line(line: str) -> Optional[Endpoint]:
     )
 
 
-def read_discovery_conf(path: str = DISCOVERY_CONF) -> List[Endpoint]:
-    """Read discovery endpoints from /etc/nvme/discovery.conf.
+def read_config_dir(config_dir: str) -> Dict[str, List[Endpoint]]:
+    """Read discovery endpoints grouped by source file.
 
-    Returns a flat list of endpoints. Each non-comment, non-empty line
-    is parsed as a discovery endpoint. Trailing # name=X comments are
-    naturally ignored by parse_config_line.
+    Returns dict of filename → list of endpoints.
     """
-    try:
-        lines = Path(path).read_text().splitlines()
-    except OSError:
-        return []
-    endpoints = []
-    for line in lines:
-        ep = parse_config_line(line)
-        if ep:
-            endpoints.append(ep)
-    return endpoints
+    result: Dict[str, List[Endpoint]] = {}
+    config_path = Path(config_dir)
+    if not config_path.is_dir():
+        return result
+
+    for f in sorted(config_path.iterdir()):
+        if not f.is_file():
+            continue
+        try:
+            endpoints = []
+            for line in f.read_text().splitlines():
+                ep = parse_config_line(line)
+                if ep:
+                    endpoints.append(ep)
+            if endpoints:
+                result[f.name] = endpoints
+        except OSError as e:
+            log.warning('Failed to read config file %s: %s', f, e)
+
+    return result
+
+
+def auto_detect_endpoints(
+    config_dir: str, discovery_port: str, filename: str = 'detected-io-controllers'
+) -> bool:
+    """Bootstrap config from existing IO controllers when config dir is empty."""
+    config_path = Path(config_dir)
+    if any(f for f in config_path.iterdir() if f.is_file() and not f.name.startswith('.')):
+        return False
+
+    controllers = get_connected_controllers()
+    if not controllers:
+        return False
+
+    seen = set()
+    lines = []
+    for ctrl in controllers:
+        if ctrl.subnqn == DISCOVERY_SUBNQN:
+            continue
+        key = (ctrl.traddr, ctrl.hostnqn)
+        if key in seen:
+            continue
+        seen.add(key)
+        line = f'-t tcp -a {ctrl.traddr} -s {discovery_port}'
+        if ctrl.hostnqn:
+            line += f' -q {ctrl.hostnqn}'
+        lines.append(line)
+
+    if not lines:
+        return False
+
+    auto_file = config_path / filename
+    auto_file.write_text('\n'.join(lines) + '\n')
+    log.info(
+        'Auto-detected %d endpoints from existing controllers, wrote %s', len(lines), auto_file
+    )
+    return True
 
 
 def load_referral_cache(cache_file: str) -> List[CachedReferral]:
@@ -127,36 +166,6 @@ def save_referral_cache(cache_file: str, referrals: List[CachedReferral]):
         path.write_text(json.dumps(data, indent=2))
     except OSError as e:
         log.warning('Failed to save referral cache: %s', e)
-
-
-@dataclass(frozen=True)
-class DiscoveredTarget:
-    """An IO target from a discovery log page."""
-
-    traddr: str
-    trsvcid: str
-    subnqn: str
-
-
-def extract_io_targets(output: dict) -> List[DiscoveredTarget]:
-    """Extract IO target entries from discovery log page JSON.
-
-    IO targets have subtype 'nvme' (NVME_NQN_NVME), as opposed to
-    referrals which have subtype 'discovery' (NVME_NQN_DISC).
-    """
-    targets = []
-    for rec in output.get('records', []):
-        subtype = rec.get('subtype', '').lower()
-        if 'discovery' in subtype or 'referral' in subtype:
-            continue
-        subnqn = rec.get('subnqn', '')
-        traddr = rec.get('traddr', '').strip()
-        trsvcid = str(rec.get('trsvcid', '')).strip()
-        if subnqn and traddr:
-            targets.append(DiscoveredTarget(
-                traddr=traddr, trsvcid=trsvcid, subnqn=subnqn,
-            ))
-    return targets
 
 
 def extract_referrals(output: dict) -> List[CachedReferral]:
@@ -230,6 +239,7 @@ def parse_interval(value) -> int:
 
 # Static mapping: env var name → config key
 _ENV_MAP = {
+    'DC_CLIENTCONFIGDIR': 'clientConfigDir',
     'DC_INTERNALDIR': 'internalDir',
     'DC_RECONNECTINTERVAL': 'reconnectInterval',
     'DC_POLLINGINTERVAL': 'pollingInterval',
@@ -247,6 +257,9 @@ _ENV_MAP = {
     'DC_DEBUG_ENDPOINT': 'debug.endpoint',
     'DC_DEBUG_METRICS': 'debug.metrics',
     'DC_DEBUG_ENABLEPPROF': 'debug.enablepprof',
+    'DC_AUTODETECTENTRIES_ENABLED': 'autoDetectEntries.enabled',
+    'DC_AUTODETECTENTRIES_FILENAME': 'autoDetectEntries.filename',
+    'DC_AUTODETECTENTRIES_DISCOVERYSERVICEPORT': 'autoDetectEntries.discoveryServicePort',
     'DC_REFERRALTTL': 'referralTTL',
     'DC_AEN_ENABLED': 'aenEnabled',
 }
