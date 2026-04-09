@@ -36,7 +36,7 @@ def parse_config_line(line: str) -> Optional[str]:
         return None
 
     tokens = line.split()
-    traddr = port = hostnqn = subnqn = secret = ctrl_secret = hostid = ''
+    traddr = port = hostnqn = secret = ctrl_secret = hostid = ''
     ctrl_loss_tmo = None
     transport = 'tcp'
     i = 0
@@ -51,7 +51,7 @@ def parse_config_line(line: str) -> Optional[str]:
             hostnqn = tokens[i + 1]
             i += 2
         elif tokens[i] == '-n' and i + 1 < len(tokens):
-            subnqn = tokens[i + 1]
+            # subnqn is not used in kernel discovery conf.
             i += 2
         elif tokens[i] in ('-w', '-S') and i + 1 < len(tokens):
             secret = tokens[i + 1]
@@ -66,7 +66,9 @@ def parse_config_line(line: str) -> Optional[str]:
             try:
                 ctrl_loss_tmo = int(tokens[i + 1])
             except ValueError:
-                log.warning('Invalid ctrl_loss_tmo value: %s', tokens[i + 1])
+                log.error('Invalid ctrl_loss_tmo value %r, rejecting line: %s',
+                          tokens[i + 1], line)
+                return None
             i += 2
         elif tokens[i] == '-t' and i + 1 < len(tokens):
             transport = tokens[i + 1]
@@ -87,8 +89,8 @@ def parse_config_line(line: str) -> Optional[str]:
 
     port = port or '8009'
 
-    # Build discovery.conf line — include -p for persistent connections
-    parts = [f'-t {transport}', f'-a {traddr}', f'-s {port}', '-p']
+    # Build discovery.conf line
+    parts = [f'-t {transport}', f'-a {traddr}', f'-s {port}']
     if hostnqn:
         parts.append(f'-q {hostnqn}')
     if secret:
@@ -145,8 +147,8 @@ def clear_discovery_conf():
 
 
 def run_nvme_connect_all():
-    """Run nvme connect-all (reads /etc/nvme/discovery.conf)."""
-    cmd = ['nvme', 'connect-all']
+    """Run nvme connect-all -p (reads /etc/nvme/discovery.conf)."""
+    cmd = ['nvme', 'connect-all', '-p']
     log.info('Running: %s', ' '.join(cmd))
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.stdout.strip():
@@ -188,7 +190,7 @@ def cmd_connect_all(args):
     return 0
 
 
-def cmd_disconnect_all(args):
+def cmd_disconnect_all():
     """Clear discovery.conf and run nvme disconnect-all."""
     clear_discovery_conf()
 
@@ -228,7 +230,7 @@ def main():
     if args.command == 'connect-all':
         sys.exit(cmd_connect_all(args))
     elif args.command == 'disconnect-all':
-        sys.exit(cmd_disconnect_all(args))
+        sys.exit(cmd_disconnect_all())
 
 
 if __name__ == '__main__':
