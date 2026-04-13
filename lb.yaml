@@ -21,7 +21,6 @@ discovery-client:
     deps:
     - file://discovery-client-lite.py
     - file://etc/systemd/system/discovery-client-lite.service
-    - file://etc/systemd/system/discovery-client-lite-watcher.path
 
   discovery-client-packages-el8:
     build:

@@ -5,7 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+RemainAfterExit=yes
 ExecStart=/usr/local/bin/discovery-client-lite.py connect-all
+ExecReload=/usr/local/bin/discovery-client-lite.py connect-all
 
 [Install]
 WantedBy=multi-user.target

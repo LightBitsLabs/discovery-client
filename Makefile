@@ -173,7 +173,6 @@ install-discovery-client-lite:
 	$(Q)cp discovery-client-lite.py $(COMPONENT_PATH)/usr/local/bin/
 	$(Q)chmod +x $(COMPONENT_PATH)/usr/local/bin/discovery-client-lite.py
 	$(Q)cp etc/systemd/system/discovery-client-lite.service $(COMPONENT_PATH)/etc/systemd/system/
-	$(Q)cp etc/systemd/system/discovery-client-lite-watcher.path $(COMPONENT_PATH)/etc/systemd/system/
 	echo "Installed discovery-client-lite component"
 
 install-discovery-client: COMPONENT_PATH = $(shell component-tool localpath --repo=discovery-client --type=$(BUILD_TYPE) discovery-client)
