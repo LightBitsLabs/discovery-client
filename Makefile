@@ -166,6 +166,17 @@ install-discovery-client-packages-%:
 	$(Q)cp build/dist/discovery-client*.deb $(COMPONENT_PATH)/
 	echo "Installed discovery-client RPMs and DEBs"
 
+install-discovery-client-lite: COMPONENT_PATH = $(shell component-tool localpath --repo=discovery-client --type=$(BUILD_TYPE) discovery-client-lite)
+install-discovery-client-lite:
+	$(Q)rm -rf $(COMPONENT_PATH)/*
+	$(Q)mkdir -p $(COMPONENT_PATH)/usr/local/bin
+	$(Q)mkdir -p $(COMPONENT_PATH)/etc/systemd/system
+	$(Q)mkdir -p $(COMPONENT_PATH)/etc/discovery-client/discovery.d
+	$(Q)cp discovery-client-lite.py $(COMPONENT_PATH)/usr/local/bin/
+	$(Q)chmod +x $(COMPONENT_PATH)/usr/local/bin/discovery-client-lite.py
+	$(Q)cp etc/systemd/system/discovery-client-lite.service $(COMPONENT_PATH)/etc/systemd/system/
+	echo "Installed discovery-client-lite component"
+
 install-discovery-client: COMPONENT_PATH = $(shell component-tool localpath --repo=discovery-client --type=$(BUILD_TYPE) discovery-client)
 install-discovery-client:
 	$(Q)rm -rf $(COMPONENT_PATH)/*
@@ -178,7 +189,8 @@ install-discovery-client:
 	discovery-packages-el8 \
 	discovery-packages-el9 \
 	install-discovery-client-packages-% \
-	install-discovery-client clean
+	install-discovery-client \
+	install-discovery-client-lite clean
 
 build/coverage:
 	mkdir -p build/coverage
