@@ -28,6 +28,8 @@ type DiscoveryClientMetrics struct {
 	FileEntries *prometheus.GaugeVec
 	// DiscoveryLogPageCount - count how much log pages we got for each hostnqn
 	DiscoveryLogPageCount *prometheus.GaugeVec
+	// NetdevMTUBytes - MTU of each local network device
+	NetdevMTUBytes *prometheus.GaugeVec
 }
 
 var Metrics DiscoveryClientMetrics
@@ -61,10 +63,18 @@ func init() {
 		},
 		[]string{},
 	)
+	Metrics.NetdevMTUBytes = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "discovery_netdev_mtu_bytes",
+			Help: "MTU value of the local network device.",
+		},
+		[]string{"device"},
+	)
 
 	// Metrics have to be registered to be exposed:
 	prometheus.MustRegister(Metrics.Connections)
 	prometheus.MustRegister(Metrics.ConnectionState)
 	prometheus.MustRegister(Metrics.EntriesTotal)
 	prometheus.MustRegister(Metrics.DiscoveryLogPageCount)
+	prometheus.MustRegister(Metrics.NetdevMTUBytes)
 }
