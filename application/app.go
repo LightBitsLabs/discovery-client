@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 
+	"github.com/lightbitslabs/discovery-client/metrics"
 	"github.com/lightbitslabs/discovery-client/model"
 	"github.com/lightbitslabs/discovery-client/pkg/clientconfig"
 	"github.com/lightbitslabs/discovery-client/pkg/nvme/nvmehost"
@@ -61,6 +62,7 @@ func (app *App) Start() error {
 	go func() {
 		if len(app.cfg.Debug.Endpoint) > 0 {
 			http.Handle("/metrics", promhttp.Handler())
+			go metrics.RunNetdevMTUCollector(app.ctx)
 			app.log.Infof("%v", http.ListenAndServe(app.cfg.Debug.Endpoint, nil))
 		}
 	}()
