@@ -49,6 +49,23 @@ discovery-client:
     - file://go.mod
     - file://discovery-client.spec
 
+  discovery-client-packages-el10:
+    build:
+    - make discovery-packages-el10 -f Makefile.lb
+    install:
+    - make install-discovery-client-packages-el10
+    deps:
+    - milestone:milestone
+    - file://Makefile
+    - file://Makefile.lb
+    - file://pkg
+    - file://model
+    - file://vendor
+    - file://application
+    - file://main.go
+    - file://go.mod
+    - file://discovery-client.spec
+
   lb-nvme-discovery-client:
     build:
     - make -f Makefile.lb build-image
