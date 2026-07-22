@@ -174,7 +174,7 @@ install-discovery-client:
 	$(Q)cp -Rf ./etc/ $(COMPONENT_PATH)/
 	echo "Installed discovery-client component"
 
-.PHONY: discovery-rpms-% discovery-client-debs-%\
+.PHONY: discovery-rpms-% discovery-client-debs \
 	discovery-packages-el8 \
 	discovery-packages-el9 \
 	install-discovery-client-packages-% \
