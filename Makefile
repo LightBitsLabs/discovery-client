@@ -48,6 +48,9 @@ DISCOVERY_CLIENT_PKG=github.com/lightbitslabs/discovery-client
 
 DSC_IMG := $(DOCKER_REGISTRY)$(DOCKER_TAG)
 RPMOUT_DIR := $(WORKSPACE_TOP)/discovery-client/build/dist
+# Dedicated output dir for the RPM that backs the .deb, so its plain "-1" release
+# does not collide with the hash-tagged release RPM in RPMOUT_DIR (LBM1-45045).
+DEB_RPMOUT_DIR := $(WORKSPACE_TOP)/discovery-client/build/deb-dist
 
 override GO_VARS := GO111MODULE=on CGO_ENABLED=1 GOOS=linux GOFLAGS=-mod=vendor
 
@@ -74,8 +77,11 @@ discovery-rpms: build/dist build/discovery-client
 	$(Q) rm -rf ${RPMOUT_DIR}
 	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="_builddir `pwd`" --define="dist $(DISCOVERY_CLIENT_RELEASE)~$(MANIFEST_HASH_VERSION)" --define "_rpmdir $(RPMOUT_DIR)" discovery-client.spec
 
+discovery-client-debs: VERSION = $(or $(LIGHTOS_VERSION),$(DEFAULT_REL))
 discovery-client-debs: discovery-rpms
-	(cd build/dist && sudo alien --to-deb -v -k ${RPMOUT_DIR}/x86_64/discovery-client*.rpm && sudo chown ${USER}:${USER} ${WORKSPACE_TOP}/discovery-client/build/dist/*.deb)
+	$(Q) rm -rf $(DEB_RPMOUT_DIR)
+	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="_builddir `pwd`" --define="dist $(DISCOVERY_CLIENT_RELEASE)" --define "_rpmdir $(DEB_RPMOUT_DIR)" discovery-client.spec
+	(cd build/dist && sudo alien --to-deb -v -k $(DEB_RPMOUT_DIR)/x86_64/discovery-client-${VERSION}-${DISCOVERY_CLIENT_RELEASE}.x86_64.rpm && sudo chown ${USER}:${USER} ${WORKSPACE_TOP}/discovery-client/build/dist/*.deb)
 
 discovery-packages: discovery-rpms discovery-client-debs
 
