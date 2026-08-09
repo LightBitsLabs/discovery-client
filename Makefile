@@ -158,6 +158,8 @@ discovery-packages-el8: discovery-rpms-el8 discovery-client-debs
 
 discovery-packages-el9: discovery-rpms-el9 discovery-client-debs
 
+discovery-packages-el10: discovery-rpms-el10 discovery-client-debs
+
 install-discovery-client-packages-%: COMPONENT_PATH = $(shell component-tool localpath --repo=discovery-client --type=$(BUILD_TYPE) discovery-client-packages-$*)
 install-discovery-client-packages-%:
 	$(Q)mkdir -p $(COMPONENT_PATH)/
@@ -177,6 +179,7 @@ install-discovery-client:
 .PHONY: discovery-rpms-% discovery-client-debs-%\
 	discovery-packages-el8 \
 	discovery-packages-el9 \
+	discovery-packages-el10 \
 	install-discovery-client-packages-% \
 	install-discovery-client clean
 
