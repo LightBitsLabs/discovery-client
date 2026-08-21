@@ -1,11 +1,13 @@
 discovery-client:
   discovery-client:
     build:
-    - make
+    - make -f Makefile.lb discovery-binary
     install:
     - make install-discovery-client
     deps:
     - file://Makefile
+    - file://Makefile.lb
+    - file://env/build/Dockerfile
     - file://application
     - file://etc
     - file://go.mod
@@ -21,6 +23,8 @@ discovery-client:
     install:
     - make install-discovery-client-packages-el8
     deps:
+    - file://env/build/Dockerfile
+    - discovery-client:discovery-client
     - common:milestone
     - file://Makefile
     - file://Makefile.lb
@@ -38,6 +42,8 @@ discovery-client:
     install:
     - make install-discovery-client-packages-el9
     deps:
+    - file://env/build/Dockerfile
+    - discovery-client:discovery-client
     - milestone:milestone
     - file://Makefile
     - file://Makefile.lb
@@ -55,6 +61,8 @@ discovery-client:
     install:
     - make install-discovery-client-packages-el10
     deps:
+    - file://env/build/Dockerfile
+    - discovery-client:discovery-client
     - milestone:milestone
     - file://Makefile
     - file://Makefile.lb
