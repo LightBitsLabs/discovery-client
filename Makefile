@@ -14,6 +14,9 @@
 
 DISCOVERY_CLIENT_RELEASE = 1
 
+# Fallback when LIGHTOS_VERSION is not supplied, matching the spec default.
+DEFAULT_REL ?= 9.9.9
+
 override BIN_NAME := lb-nvme-discovery-client
 
 override BUILD_HOST := $(shell hostname)
@@ -122,7 +125,6 @@ override LABELS := \
 
 PKG=$(shell go list)
 DISCOVERY_CLIENT_PKG=github.com/lightbitslabs/discovery-client
-RPMOUT_DIR := $(WORKSPACE_TOP)/discovery-client/build/dist
 
 override GO_VARS := GO111MODULE=on CGO_ENABLED=1 GOOS=linux GOFLAGS=-mod=vendor
 
@@ -139,33 +141,45 @@ build/discovery-client: GO_FILES=$(shell find discovery-client pkg -name '*.go')
 build/discovery-client: build $(GO_FILES)
 	$(GO_VARS) go build -o ./build/discovery-client $(DISCOVERY_CLIENT_PKG)
 
+# Prebuilt binary to package. Defaults in-tree so 'make && make
+# discovery-packages-el8' works standalone; the internal build overrides it with
+# the discovery-client component's store path, which is built once.
+CLIENT_BIN ?= $(CURDIR)/build/discovery-client
+
 clean:
 	$(Q) rm -f build/discovery-client
 	$(Q) rm -rf build/dist
+	$(Q) rm -rf build/deb
 
 discovery-rpms-%: VERSION = $(or $(LIGHTOS_VERSION),$(DEFAULT_REL))
-discovery-rpms-%: build/dist build/discovery-client
-	$(Q) rm -rf build/dist/*
-	$(Q) rm -rf ${RPMOUT_DIR}
-	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="_builddir `pwd`" --define="dist $(DISCOVERY_CLIENT_RELEASE).$*" --define "_rpmdir $(RPMOUT_DIR)" discovery-client.spec
+discovery-rpms-%: RPMOUT_DIR = $(CURDIR)/build/dist/$*
+discovery-rpms-%: build/dist
+	$(Q) rm -rf $(RPMOUT_DIR)
+	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="source_dir $(CURDIR)" --define="client_bin $(CLIENT_BIN)" --define="_topdir $(RPMOUT_DIR)/rpmbuild" --define="dist $(DISCOVERY_CLIENT_RELEASE).$*" --define "_rpmdir $(RPMOUT_DIR)" discovery-client.spec
 
-discovery-client-debs: VERSION = $(or $(LIGHTOS_VERSION),$(DEFAULT_REL))
-discovery-client-debs:
-	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="_builddir `pwd`" --define="dist $(DISCOVERY_CLIENT_RELEASE)" --define "_rpmdir $(RPMOUT_DIR)" discovery-client.spec
-	(cd build/dist && sudo alien --to-deb -v -k ${RPMOUT_DIR}/x86_64/discovery-client-${VERSION}-${DISCOVERY_CLIENT_RELEASE}.x86_64.rpm && sudo chown ${USER}:${USER} ${WORKSPACE_TOP}/discovery-client/build/dist/*.deb)
+# Per-distro work dir so concurrent el8/el9 deb builds don't share a path.
+discovery-client-debs-%: VERSION = $(or $(LIGHTOS_VERSION),$(DEFAULT_REL))
+discovery-client-debs-%: DEB_WORK = $(CURDIR)/build/deb/$*
+discovery-client-debs-%:
+	$(Q) rm -rf $(DEB_WORK)
+	$(Q) rpmbuild -bb --clean --define="version ${VERSION}" --define="source_dir $(CURDIR)" --define="client_bin $(CLIENT_BIN)" --define="_topdir $(DEB_WORK)/rpmbuild" --define="dist $(DISCOVERY_CLIENT_RELEASE)" --define "_rpmdir $(DEB_WORK)/rpm" discovery-client.spec
+	$(Q) deb_scratch=`mktemp -d`; \
+		trap 'rm -rf $$deb_scratch' EXIT; \
+		( cd $$deb_scratch && fakeroot alien --to-deb -v -k $(DEB_WORK)/rpm/x86_64/discovery-client-${VERSION}-${DISCOVERY_CLIENT_RELEASE}.x86_64.rpm ) && \
+		cp $$deb_scratch/*.deb $(DEB_WORK)/
 
-discovery-packages-el8: discovery-rpms-el8 discovery-client-debs
+discovery-packages-el8: discovery-rpms-el8 discovery-client-debs-el8
 
-discovery-packages-el9: discovery-rpms-el9 discovery-client-debs
+discovery-packages-el9: discovery-rpms-el9 discovery-client-debs-el9
 
-discovery-packages-el10: discovery-rpms-el10 discovery-client-debs
+discovery-packages-el10: discovery-rpms-el10 discovery-client-debs-el10
 
 install-discovery-client-packages-%: COMPONENT_PATH = $(shell component-tool localpath --repo=discovery-client --type=$(BUILD_TYPE) discovery-client-packages-$*)
 install-discovery-client-packages-%:
 	$(Q)mkdir -p $(COMPONENT_PATH)/
 	$(Q)rm -rf $(COMPONENT_PATH)/*.rpm $(COMPONENT_PATH)/*.deb
-	$(Q)cp ${RPMOUT_DIR}/x86_64/discovery-client*el*.rpm $(COMPONENT_PATH)/
-	$(Q)cp build/dist/discovery-client*.deb $(COMPONENT_PATH)/
+	$(Q)cp build/dist/$*/x86_64/discovery-client*el*.rpm $(COMPONENT_PATH)/
+	$(Q)cp build/deb/$*/discovery-client*.deb $(COMPONENT_PATH)/
 	echo "Installed discovery-client RPMs and DEBs"
 
 install-discovery-client: COMPONENT_PATH = $(shell component-tool localpath --repo=discovery-client --type=$(BUILD_TYPE) discovery-client)
