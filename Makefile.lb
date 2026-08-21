@@ -37,6 +37,30 @@ push-image-ubi9:
 discovery-rpms:
 	$(BUILD_FLAGS) $(MAKE) -f Makefile discovery-rpms
 
-discovery-packages-%:
+# The builder image carries Go and the packaging tools; it is defined in this
+# repo so it can be built and used without the internal build system.
+BUILD_IMG_TAG := discovery-client-builder:$(shell md5sum env/build/Dockerfile | awk '{print $$1}')
+MOUNT_ROOT := $(if $(WORKSPACE_TOP),$(WORKSPACE_TOP),$(CURDIR))
+
+CONTAINER_RUN = docker run --rm \
+	-v $(MOUNT_ROOT):$(MOUNT_ROOT) \
+	-w $(CURDIR) \
+	--user $(shell id -u):$(shell id -g) \
+	$(BUILD_IMG_TAG)
+
+.PHONY: build-builder-image
+build-builder-image: env/build/Dockerfile
+	docker build -q -f env/build/Dockerfile -t $(BUILD_IMG_TAG) . >/dev/null
+
+# component-tool is part of the internal build system and is deliberately not in
+# the builder image, so resolve the store path out here and pass it in.
+DC_STORE = $(shell component-tool localpath --repo=discovery-client --type=$(BUILD_TYPE) discovery-client 2>/dev/null)
+CLIENT_BIN_ARG = $(if $(DC_STORE),CLIENT_BIN=$(DC_STORE)/usr/bin/discovery-client,)
+
+.PHONY: discovery-binary
+discovery-binary: build-builder-image
+	$(CONTAINER_RUN) $(MAKE) -f Makefile build/discovery-client
+
+discovery-packages-%: build-builder-image
 	@echo "Building discovery packages for $*"
-	$(BUILD_FLAGS) $(MAKE) -f Makefile discovery-packages-$*
+	$(CONTAINER_RUN) $(MAKE) -f Makefile discovery-packages-$* $(BUILD_FLAGS) $(CLIENT_BIN_ARG)
