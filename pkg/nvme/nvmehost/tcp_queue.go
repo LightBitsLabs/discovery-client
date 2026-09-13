@@ -582,7 +582,7 @@ func (queue *tcpQueue) sendAsyncEventRequest() error {
 	return queue.sendRequest(request)
 }
 
-func (queue *tcpQueue) handleRecv() error {
+func (queue *tcpQueue) handleRecv(ctx context.Context) error {
 	hdr, err := queue.recvTCPHeader()
 	if err != nil {
 		return err
@@ -609,11 +609,20 @@ func (queue *tcpQueue) handleRecv() error {
 		return nil
 	}
 	if completedRequest.Completion() != nil {
+		// Both channels are unbuffered and their readers give up on ctx.Done()
+		// or on waitForReplyTimeout, so an unguarded send would park this
+		// goroutine forever once the waiter is gone.
+		var completionCh chan nvme.Request
 		switch completedRequest.(type) {
 		case *nvme.AsyncEventRequest:
-			queue.completedAENRequestCh <- completedRequest
+			completionCh = queue.completedAENRequestCh
 		default:
-			queue.completedRequestsChan <- completedRequest
+			completionCh = queue.completedRequestsChan
+		}
+		select {
+		case completionCh <- completedRequest:
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 	return nil
@@ -621,8 +630,13 @@ func (queue *tcpQueue) handleRecv() error {
 
 // in case we close the returned channel means that the method has ended.
 // case there was an error we will send it on the channel.
+//
+// errChan is buffered so that the single error we may send never blocks: the
+// consumer races us on ctx.Done() and is free to walk away without receiving
+// it. An unbuffered channel here stranded this goroutine (and the queue state
+// it captures) on every connection teardown.
 func (queue *tcpQueue) recvPdu(ctx context.Context) <-chan error {
-	errChan := make(chan error)
+	errChan := make(chan error, 1)
 	go func() {
 		defer close(errChan)
 		for {
@@ -630,8 +644,8 @@ func (queue *tcpQueue) recvPdu(ctx context.Context) <-chan error {
 			case <-ctx.Done():
 				return
 			default:
-				if err := queue.handleRecv(); err != nil {
-					errChan <- err // routine can stuck here
+				if err := queue.handleRecv(ctx); err != nil {
+					errChan <- err
 					return
 				}
 			}
