@@ -187,7 +187,11 @@ func (s *service) multiplexNewConnection(conn *clientconfig.Connection) {
 				if event.ServerChange != nil {
 					s.log.Warnf("%s keep alive failed: %s", conn, event.ServerChange.Error())
 					conn.SetState(false)
-					s.aggregateChan <- &aenNotification{conn, event}
+					select {
+					case s.aggregateChan <- &aenNotification{conn, event}:
+					case <-conn.Ctx.Done():
+						s.log.Debugf("%s stopped before server-change notification was delivered", conn)
+					}
 					return
 				}
 				s.log.Debugf("aen on %s", conn)
@@ -195,7 +199,15 @@ func (s *service) multiplexNewConnection(conn *clientconfig.Connection) {
 					AenChange:    true,
 					ServerChange: nil,
 				}
-				s.aggregateChan <- &aenNotification{conn, aen}
+				// Guarded so a stalled or stopped consumer cannot strand this
+				// goroutine, and so Stop() closing aggregateChan can never race
+				// a pending send into a "send on closed channel" panic.
+				select {
+				case s.aggregateChan <- &aenNotification{conn, aen}:
+				case <-conn.Ctx.Done():
+					s.log.Debugf("%s stopped before AEN notification was delivered", conn)
+					return
+				}
 			}
 		}
 	}()
