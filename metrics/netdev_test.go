@@ -80,6 +80,25 @@ func TestUpdateNetdevMTU(t *testing.T) {
 	assert.Equal(t, map[string]float64{"lo": 65536, "eth0": 1500}, collectNetdevMTUMetrics(t))
 }
 
+func TestUpdateNetdevMTURemovesStaleDevice(t *testing.T) {
+	Metrics.NetdevMTUBytes.Reset()
+	root := t.TempDir()
+	fs, err := sysfs.NewFS(root)
+	require.NoError(t, err)
+
+	devDir := filepath.Join(root, "class", "net", "eth0")
+	require.NoError(t, os.MkdirAll(devDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(devDir, "mtu"), []byte("1500\n"), 0o644))
+
+	require.NoError(t, UpdateNetdevMTU(fs))
+	assert.Equal(t, map[string]float64{"eth0": 1500}, collectNetdevMTUMetrics(t))
+
+	require.NoError(t, os.RemoveAll(devDir))
+
+	require.NoError(t, UpdateNetdevMTU(fs))
+	assert.Equal(t, map[string]float64{}, collectNetdevMTUMetrics(t))
+}
+
 func TestUpdateNetdevMTUSkipsUnreadableAttribute(t *testing.T) {
 	Metrics.NetdevMTUBytes.Reset()
 	fs := newTestSysfs(t, map[string]string{

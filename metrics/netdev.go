@@ -18,6 +18,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/procfs/sysfs"
 	"github.com/sirupsen/logrus"
 )
@@ -28,12 +30,16 @@ const netdevMTUCollectionInterval = 30 * time.Second
 // UpdateNetdevMTU reads the MTU of every local network device from sysfs and
 // updates the NetdevMTUBytes gauge. A device whose MTU can't be read (e.g. it
 // disappeared, or the attribute isn't supported) is skipped rather than
-// failing the whole update.
+// failing the whole update. Devices that were previously exported but are no
+// longer present (unplugged, renamed) have their label removed so the gauge
+// doesn't keep reporting stale values for them.
 func UpdateNetdevMTU(fs sysfs.FS) error {
 	devices, err := fs.NetClassDevices()
 	if err != nil {
 		return err
 	}
+
+	seen := make(map[string]struct{}, len(devices))
 	for _, dev := range devices {
 		iface, err := fs.NetClassByIface(dev)
 		if err != nil {
@@ -44,8 +50,40 @@ func UpdateNetdevMTU(fs sysfs.FS) error {
 			continue
 		}
 		Metrics.NetdevMTUBytes.WithLabelValues(dev).Set(float64(*iface.MTU))
+		seen[dev] = struct{}{}
 	}
+
+	for _, dev := range netdevMTULabels() {
+		if _, ok := seen[dev]; !ok {
+			Metrics.NetdevMTUBytes.DeleteLabelValues(dev)
+		}
+	}
+
 	return nil
+}
+
+// netdevMTULabels returns the "device" label values currently exported by
+// NetdevMTUBytes.
+func netdevMTULabels() []string {
+	ch := make(chan prometheus.Metric)
+	go func() {
+		Metrics.NetdevMTUBytes.Collect(ch)
+		close(ch)
+	}()
+
+	var devices []string
+	for m := range ch {
+		pb := &dto.Metric{}
+		if err := m.Write(pb); err != nil {
+			continue
+		}
+		for _, lp := range pb.GetLabel() {
+			if lp.GetName() == "device" {
+				devices = append(devices, lp.GetValue())
+			}
+		}
+	}
+	return devices
 }
 
 // RunNetdevMTUCollector periodically refreshes the netdev MTU gauge until ctx
