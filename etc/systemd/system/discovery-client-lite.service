@@ -1,0 +1,13 @@
+[Unit]
+Description=NVMe/TCP Discovery Client Lite - Connect
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/discovery-client-lite.py connect-all
+ExecReload=/usr/local/bin/discovery-client-lite.py connect-all
+
+[Install]
+WantedBy=multi-user.target
