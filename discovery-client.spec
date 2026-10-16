@@ -13,6 +13,9 @@
 # limitations under the License.
 
 %{!?dist: %define dist 1}
+# Absolute path to the prebuilt binary; packaging points it at the
+# discovery-client component store.
+%{!?client_bin: %define client_bin %{source_dir}/build/discovery-client}
 
 Name:     discovery-client
 Version:  %{?version}%{!?version:9.9.9}
@@ -36,19 +39,18 @@ Discovery client for NVMe/TCP initiators.
 
 %install
 rm -rf %{buildroot}/*
-rm -rf %{_topdir}/RPMS/*
 
 install -dp %{buildroot}%{_bindir}
 install -dp %{buildroot}/etc/systemd/system
 
 ## client related files
-install -p -m 755 %{_builddir}/build/discovery-client %{buildroot}%{_bindir}/discovery-client
+install -p -m 755 %{client_bin} %{buildroot}%{_bindir}/discovery-client
 install -dp -m 755 %{buildroot}/etc/discovery-client
-cp -ar %{_builddir}/etc/discovery-client/discovery-client.yaml %{buildroot}/etc/discovery-client/discovery-client.yaml
-install -p -m 644 %{_builddir}/etc/systemd/system/discovery-client.service %{buildroot}/etc/systemd/system/discovery-client.service
+cp -ar %{source_dir}/etc/discovery-client/discovery-client.yaml %{buildroot}/etc/discovery-client/discovery-client.yaml
+install -p -m 644 %{source_dir}/etc/systemd/system/discovery-client.service %{buildroot}/etc/systemd/system/discovery-client.service
 
 install -dp %{buildroot}/var/lib/discovery-client/docs
-cp -a %{_builddir}/README.md      %{buildroot}/var/lib/discovery-client/docs/
+cp -a %{source_dir}/README.md      %{buildroot}/var/lib/discovery-client/docs/
 
 %files
 %defattr(-,root,root,-)

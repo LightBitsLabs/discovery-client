@@ -277,6 +277,52 @@ Once it will reach at least one discovery service it will receive referral infor
 
 The `discovery-client` was written by Yogev Cohen and the rest of the Lightbits Labs development team and is copyrighted by Lightbits Labs.
 
+## Building From Source
+
+### Using the build container (recommended)
+
+The build environment is defined in `env/build/Dockerfile`, so no toolchain is
+needed on the host beyond Docker:
+
+```bash
+docker build -f env/build/Dockerfile -t discovery-client-builder .
+docker run --rm -v "$PWD:$PWD" -w "$PWD" -u "$(id -u):$(id -g)" \
+    discovery-client-builder make
+```
+
+That produces `build/discovery-client`. To produce packages as well:
+
+```bash
+docker run --rm -v "$PWD:$PWD" -w "$PWD" -u "$(id -u):$(id -g)" \
+    discovery-client-builder sh -c 'make && make discovery-packages-el8'
+```
+
+### Building on the host
+
+| Dependency | Needed for |
+| ---------- | ---------- |
+| Go 1.22 | the `discovery-client` binary |
+| `uuid-dev` (Debian) / `libuuid-devel` (RPM) | cgo in `pkg/nvme` includes `uuid/uuid.h` |
+| `rpm` / `rpmbuild` | the `.rpm` packages |
+| `alien`, `fakeroot` | converting the `.rpm` to a `.deb` |
+
+`alien` is Debian-only, which is why the build container is Debian based.
+
+### Targets
+
+| Target | Output |
+| ------ | ------ |
+| `make` | `build/discovery-client` |
+| `make discovery-packages-el8` (also `el9`, `el10`) | `build/dist/<distro>/x86_64/*.rpm` and `build/deb/<distro>/*.deb` |
+
+The packaging targets do not compile. Run `make` first, or point them at an
+existing binary with `CLIENT_BIN=/path/to/discovery-client`.
+
+`LIGHTOS_VERSION` sets the package version and defaults to `9.9.9`.
+
+To build the container image that ships the daemon, use
+`Dockerfile.discovery-client` rather than the build container above.
+
 ## Pre-built Packages
 
 To install the latest pre-built `.deb` package:
