@@ -10,6 +10,8 @@ require (
 	github.com/lunixbochs/struc v0.0.0-20200707160740-784aaebc1d40
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/prometheus/client_golang v1.13.0
+	github.com/prometheus/client_model v0.2.0
+	github.com/prometheus/procfs v0.8.0
 	github.com/rifflock/lfshook v0.0.0-20180920164130-b9218ef580f5
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.6.0
@@ -34,13 +36,12 @@ require (
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.5 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.37.0 // indirect
-	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/spf13/afero v1.8.2 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/subosito/gotenv v1.4.1 // indirect
+	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f // indirect
 	golang.org/x/sys v0.0.0-20220908164124-27713097b956 // indirect
 	golang.org/x/text v0.3.8 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
