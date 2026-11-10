@@ -73,7 +73,7 @@ func inc(ip net.IP) {
 	}
 }
 
-func createSysClassNvmeFileTree(t *testing.T, subsysnqn, hostnqn, transport, cidr string, port int, controllers int) string {
+func createSysClassNvmeFileTree(t *testing.T, subsysnqn, hostnqn, hostid, transport, cidr string, port int, controllers int) string {
 	dir, err := os.MkdirTemp("", "prefix")
 	require.NoError(t, err, "failed creating temp dir")
 	hosts, err := getHostsInCIDR(cidr)
@@ -88,6 +88,9 @@ func createSysClassNvmeFileTree(t *testing.T, subsysnqn, hostnqn, transport, cid
 		}
 		if len(hostnqn) > 0 {
 			require.NoError(t, os.WriteFile(path.Join(nvmeCtrlPath, "hostnqn"), []byte(hostnqn), os.ModePerm), "failed")
+		}
+		if len(hostid) > 0 {
+			require.NoError(t, os.WriteFile(path.Join(nvmeCtrlPath, "hostid"), []byte(hostid), os.ModePerm), "failed")
 		}
 		if len(transport) > 0 {
 			require.NoError(t, os.WriteFile(path.Join(nvmeCtrlPath, "transport"), []byte(transport), os.ModePerm), "failed")
@@ -160,6 +163,7 @@ func TestDetectEntriesByIOControllers(t *testing.T) {
 	goodSubsys := "nqn.2016-01.com.lightbitslabs:uuid:a40beb3e-08a4-45cb-b4e9-2fd136fb2d6f"
 	badSubsys := "nqn.2016-01.com.bla:uuid:a40beb3e-08a4-45cb-b4e9-2fd136fb2d6f"
 	hostnqn := "nqn.2019-09.com.lightbitslabs:host:rack08-server55-vm06.node"
+	hostid := "4f70fbce-4614-5f4b-a06e-2e19e9657538"
 	testCases := []struct {
 		name     string
 		dir      string
@@ -168,53 +172,59 @@ func TestDetectEntriesByIOControllers(t *testing.T) {
 	}{
 		{
 			name:   "succeed",
-			dir:    createSysClassNvmeFileTree(t, goodSubsys, hostnqn, "tcp", "192.168.11.0/24", 8009, 3),
+			dir:    createSysClassNvmeFileTree(t, goodSubsys, hostnqn, hostid, "tcp", "192.168.11.0/24", 8009, 3),
 			dsPort: 8009,
 			expected: []*commonstructs.Entry{
-				{Transport: "tcp", Traddr: "192.168.11.1", Trsvcid: 8009, Hostnqn: hostnqn, Nqn: goodSubsys},
-				{Transport: "tcp", Traddr: "192.168.11.2", Trsvcid: 8009, Hostnqn: hostnqn, Nqn: goodSubsys},
-				{Transport: "tcp", Traddr: "192.168.11.3", Trsvcid: 8009, Hostnqn: hostnqn, Nqn: goodSubsys},
+				{Transport: "tcp", Traddr: "192.168.11.1", Trsvcid: 8009, Hostnqn: hostnqn, Nqn: goodSubsys, HostID: hostid},
+				{Transport: "tcp", Traddr: "192.168.11.2", Trsvcid: 8009, Hostnqn: hostnqn, Nqn: goodSubsys, HostID: hostid},
+				{Transport: "tcp", Traddr: "192.168.11.3", Trsvcid: 8009, Hostnqn: hostnqn, Nqn: goodSubsys, HostID: hostid},
 			},
 		},
 		{
 			name:     "succeed - no IO controller device exists",
-			dir:      createSysClassNvmeFileTree(t, goodSubsys, hostnqn, "tcp", "192.168.11.0/24", 8009, 0),
+			dir:      createSysClassNvmeFileTree(t, goodSubsys, hostnqn, hostid, "tcp", "192.168.11.0/24", 8009, 0),
 			dsPort:   8009,
 			expected: []*commonstructs.Entry{},
 		},
 		{
 			name:     "failed - bad subsysnqn",
-			dir:      createSysClassNvmeFileTree(t, badSubsys, hostnqn, "tcp", "192.168.11.0/24", 8009, 3),
+			dir:      createSysClassNvmeFileTree(t, badSubsys, hostnqn, hostid, "tcp", "192.168.11.0/24", 8009, 3),
 			dsPort:   8009,
 			expected: []*commonstructs.Entry{},
 		},
 		{
 			name:     "failed - no address file",
-			dir:      createSysClassNvmeFileTree(t, goodSubsys, hostnqn, "tcp", "", 8009, 3),
+			dir:      createSysClassNvmeFileTree(t, goodSubsys, hostnqn, hostid, "tcp", "", 8009, 3),
 			dsPort:   8009,
 			expected: []*commonstructs.Entry{},
 		},
 		{
 			name:     "failed - no hostnqn file",
-			dir:      createSysClassNvmeFileTree(t, goodSubsys, "", "tcp", "10.10.11.0/24", 8009, 3),
+			dir:      createSysClassNvmeFileTree(t, goodSubsys, "", hostid, "tcp", "10.10.11.0/24", 8009, 3),
+			dsPort:   8009,
+			expected: []*commonstructs.Entry{},
+		},
+		{
+			name:     "failed - no hostid file",
+			dir:      createSysClassNvmeFileTree(t, goodSubsys, hostnqn, "", "tcp", "10.10.11.0/24", 8009, 3),
 			dsPort:   8009,
 			expected: []*commonstructs.Entry{},
 		},
 		{
 			name:     "failed - no subsysnqn file",
-			dir:      createSysClassNvmeFileTree(t, "", hostnqn, "tcp", "10.10.11.0/24", 8009, 3),
+			dir:      createSysClassNvmeFileTree(t, "", hostnqn, hostid, "tcp", "10.10.11.0/24", 8009, 3),
 			dsPort:   8009,
 			expected: []*commonstructs.Entry{},
 		},
 		{
 			name:     "failed - no transport file",
-			dir:      createSysClassNvmeFileTree(t, goodSubsys, hostnqn, "", "10.10.11.0/24", 8009, 3),
+			dir:      createSysClassNvmeFileTree(t, goodSubsys, hostnqn, hostid, "", "10.10.11.0/24", 8009, 3),
 			dsPort:   8009,
 			expected: []*commonstructs.Entry{},
 		},
 		{
 			name:     "failed - transport not valid",
-			dir:      createSysClassNvmeFileTree(t, goodSubsys, hostnqn, "rdma", "10.10.11.0/24", 8009, 3),
+			dir:      createSysClassNvmeFileTree(t, goodSubsys, hostnqn, hostid, "rdma", "10.10.11.0/24", 8009, 3),
 			dsPort:   8009,
 			expected: []*commonstructs.Entry{},
 		},
