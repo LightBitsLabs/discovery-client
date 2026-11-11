@@ -301,7 +301,7 @@ docker run --rm -v "$PWD:$PWD" -w "$PWD" -u "$(id -u):$(id -g)" \
 
 | Dependency | Needed for |
 | ---------- | ---------- |
-| Go 1.22 | the `discovery-client` binary |
+| Go 1.26.10 | the `discovery-client` binary |
 | `uuid-dev` (Debian) / `libuuid-devel` (RPM) | cgo in `pkg/nvme` includes `uuid/uuid.h` |
 | `rpm` / `rpmbuild` | the `.rpm` packages |
 | `alien`, `fakeroot` | converting the `.rpm` to a `.deb` |
