@@ -5,7 +5,7 @@
 #   docker build -f env/build/Dockerfile -t discovery-client-builder .
 #   docker run --rm -v "$PWD:$PWD" -w "$PWD" -u "$(id -u):$(id -g)" \
 #       discovery-client-builder make discovery-packages-el8
-FROM golang:1.22-bookworm
+FROM golang:1.26.10-bookworm
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
