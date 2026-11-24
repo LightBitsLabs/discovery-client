@@ -48,7 +48,7 @@ func disconnectAllCmdFunc(cmd *cobra.Command, args []string) error {
 
 		err := nvmeclient.RemoveCtrlByDevice(controllerIdentifier.Device)
 		if err != nil {
-			fmt.Print("failed to disconnect device: %q", controllerIdentifier.Device)
+			fmt.Printf("failed to disconnect device: %q. err: %v\n", controllerIdentifier.Device, err)
 		}
 	}
 	return nil
